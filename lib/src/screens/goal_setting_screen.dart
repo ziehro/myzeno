@@ -3,10 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
-import 'package:zeno/src/screens/home_screen.dart';
+import 'package:zeno/src/screens/decision_screen.dart';
 
 class GoalSettingScreen extends StatefulWidget {
-  const GoalSettingScreen({super.key});
+  // These are optional. If they are provided, we're in "edit mode".
+  final UserProfile? userProfile;
+  final UserGoal? userGoal;
+
+  const GoalSettingScreen({
+    super.key,
+    this.userProfile,
+    this.userGoal,
+  });
 
   @override
   State<GoalSettingScreen> createState() => _GoalSettingScreenState();
@@ -14,44 +22,84 @@ class GoalSettingScreen extends StatefulWidget {
 
 class _GoalSettingScreenState extends State<GoalSettingScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _lbsController = TextEditingController();
-  final _daysController = TextEditingController();
-  final _ageController = TextEditingController();
-  final _heightController = TextEditingController();
-  final _weightController = TextEditingController();
+  late final TextEditingController _lbsController;
+  late final TextEditingController _daysController;
+  late final TextEditingController _ageController;
+  late final TextEditingController _heightController;
+  late final TextEditingController _weightController;
   Sex? _selectedSex;
+  ActivityLevel? _selectedActivityLevel;
+
+  // A flag to know if we are editing or creating for the first time
+  late bool _isEditing;
+
+  @override
+  void initState() {
+    super.initState();
+    // Determine if we are in edit mode based on passed-in data
+    _isEditing = widget.userProfile != null && widget.userGoal != null;
+
+    // Pre-fill the controllers if we are in edit mode, otherwise leave them empty
+    _ageController = TextEditingController(text: _isEditing ? widget.userProfile!.age.toString() : '');
+    _heightController = TextEditingController(text: _isEditing ? widget.userProfile!.height.toString() : '');
+    _weightController = TextEditingController(text: _isEditing ? widget.userProfile!.startWeight.toString() : '');
+    _lbsController = TextEditingController(text: _isEditing ? widget.userGoal!.lbsToLose.toString() : '');
+    _daysController = TextEditingController(text: _isEditing ? widget.userGoal!.days.toString() : '');
+
+    // Pre-select the dropdowns if we are in edit mode
+    _selectedSex = _isEditing ? widget.userProfile!.sex : null;
+    _selectedActivityLevel = _isEditing ? widget.userProfile!.activityLevel : null;
+  }
 
   void _saveData() {
-    if (_formKey.currentState!.validate() && _selectedSex != null) {
-
-      // --- ADD THIS LINE to capture the current time ---
-      final DateTime now = DateTime.now();
-      // ---------------------------------------------------
-
-      // Create and save UserProfile, now with the createdAt date
-      final profile = UserProfile(
-        startWeight: double.parse(_weightController.text),
-        height: double.parse(_heightController.text),
-        age: int.parse(_ageController.text),
-        sex: _selectedSex!,
-        createdAt: now, // <-- Pass the date here
-      );
-      Hive.box<UserProfile>('user_profile_box').put(0, profile);
-
-      // Create and save UserGoal
-      final goal = UserGoal(
-        lbsToLose: double.parse(_lbsController.text),
-        days: int.parse(_daysController.text),
-      );
-      Hive.box<UserGoal>('user_goal_box').put(0, goal);
-
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
-    } else {
+    final isValid = _formKey.currentState!.validate();
+    if (!isValid || _selectedSex == null || _selectedActivityLevel == null) {
+      // Show error messages if dropdowns are not selected
       if (_selectedSex == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select your sex.')),
+          const SnackBar(
+              content: Text('Please select your sex.'),
+              backgroundColor: Colors.red),
+        );
+      }
+      if (_selectedActivityLevel == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Please select your activity level.'),
+              backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    // Preserve the original creation date if editing, otherwise use now.
+    final DateTime creationDate = _isEditing ? widget.userProfile!.createdAt : DateTime.now();
+
+    final profile = UserProfile(
+      startWeight: double.parse(_weightController.text),
+      height: double.parse(_heightController.text),
+      age: int.parse(_ageController.text),
+      sex: _selectedSex!,
+      createdAt: creationDate,
+      activityLevel: _selectedActivityLevel!,
+    );
+
+    final goal = UserGoal(
+      lbsToLose: double.parse(_lbsController.text),
+      days: int.parse(_daysController.text),
+    );
+
+    Hive.box<UserProfile>('user_profile_box').put(0, profile);
+    Hive.box<UserGoal>('user_goal_box').put(0, goal);
+
+    if (mounted) {
+      if (_isEditing) {
+        Navigator.of(context).pop(); // Just go back to the home screen
+      } else {
+        // On first setup, clear the navigation stack and go to the DecisionScreen
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const DecisionScreen()),
+              (route) => false,
         );
       }
     }
@@ -71,7 +119,8 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Your Profile & Goal"),
+        // The back button now appears automatically when editing
+        title: Text(_isEditing ? "Edit Profile & Goal" : "Your Profile & Goal"),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
@@ -80,17 +129,17 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                "Let's find your path to balance.",
-                style: Theme.of(context).textTheme.headlineSmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-
-              // --- Profile Section ---
+              if (!_isEditing) // Only show this on first setup
+                Text(
+                  "Let's find your path to balance.",
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+              if (!_isEditing) const SizedBox(height: 24),
               Text("About You", style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: _buildTextField(
@@ -131,11 +180,47 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
                     _selectedSex = newValue;
                   });
                 },
-                validator: (value) => value == null ? 'Please select your sex' : null,
+                validator: (value) =>
+                value == null ? 'Please select a value' : null,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<ActivityLevel>(
+                value: _selectedActivityLevel,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Activity Level',
+                  hintText: 'How active are you?',
+                ),
+                items: ActivityLevel.values.map((ActivityLevel level) {
+                  String text = '';
+                  switch (level) {
+                    case ActivityLevel.sedentary:
+                      text = 'Sedentary (Office Job)';
+                      break;
+                    case ActivityLevel.lightlyActive:
+                      text = 'Lightly Active (1-3 days/wk)';
+                      break;
+                    case ActivityLevel.moderatelyActive:
+                      text = 'Moderately Active (3-5 days/wk)';
+                      break;
+                    case ActivityLevel.veryActive:
+                      text = 'Very Active (6-7 days/wk)';
+                      break;
+                  }
+                  return DropdownMenuItem<ActivityLevel>(
+                    value: level,
+                    child: Text(text, overflow: TextOverflow.ellipsis),
+                  );
+                }).toList(),
+                onChanged: (ActivityLevel? newValue) {
+                  setState(() {
+                    _selectedActivityLevel = newValue;
+                  });
+                },
+                validator: (value) =>
+                value == null ? 'Please select a value' : null,
               ),
               const SizedBox(height: 32),
-
-              // --- Goal Section ---
               Text("Your Goal", style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               _buildTextField(
@@ -158,7 +243,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
                   backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('SAVE & START'),
+                child: Text(_isEditing ? 'SAVE CHANGES' : 'SAVE & START'),
               ),
             ],
           ),
@@ -167,7 +252,6 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
     );
   }
 
-  // Helper method to reduce code duplication
   TextFormField _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -186,7 +270,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
       validator: (value) {
         if (value == null || value.isEmpty) return 'Please enter a value';
         if (double.tryParse(value) == null || double.parse(value) <= 0) {
-          return 'Please enter a number greater than 0';
+          return 'Please enter a number > 0';
         }
         return null;
       },

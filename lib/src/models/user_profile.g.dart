@@ -22,13 +22,14 @@ class UserProfileAdapter extends TypeAdapter<UserProfile> {
       age: fields[2] as int,
       sex: fields[3] as Sex,
       createdAt: fields[4] as DateTime,
+      activityLevel: fields[5] as ActivityLevel,
     );
   }
 
   @override
   void write(BinaryWriter writer, UserProfile obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.startWeight)
       ..writeByte(1)
@@ -38,7 +39,9 @@ class UserProfileAdapter extends TypeAdapter<UserProfile> {
       ..writeByte(3)
       ..write(obj.sex)
       ..writeByte(4)
-      ..write(obj.createdAt);
+      ..write(obj.createdAt)
+      ..writeByte(5)
+      ..write(obj.activityLevel);
   }
 
   @override
@@ -48,6 +51,55 @@ class UserProfileAdapter extends TypeAdapter<UserProfile> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is UserProfileAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class ActivityLevelAdapter extends TypeAdapter<ActivityLevel> {
+  @override
+  final int typeId = 101;
+
+  @override
+  ActivityLevel read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return ActivityLevel.sedentary;
+      case 1:
+        return ActivityLevel.lightlyActive;
+      case 2:
+        return ActivityLevel.moderatelyActive;
+      case 3:
+        return ActivityLevel.veryActive;
+      default:
+        return ActivityLevel.sedentary;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, ActivityLevel obj) {
+    switch (obj) {
+      case ActivityLevel.sedentary:
+        writer.writeByte(0);
+        break;
+      case ActivityLevel.lightlyActive:
+        writer.writeByte(1);
+        break;
+      case ActivityLevel.moderatelyActive:
+        writer.writeByte(2);
+        break;
+      case ActivityLevel.veryActive:
+        writer.writeByte(3);
+        break;
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ActivityLevelAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
