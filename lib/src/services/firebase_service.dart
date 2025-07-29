@@ -105,11 +105,29 @@ class FirebaseService {
         snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList());
   }
 
+  // --- STREAMS FOR FREQUENTLY USED ITEMS ---
+  Stream<List<FoodLog>> get frequentFoodLogStream {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return Stream.value([]);
+    return userDoc.collection('frequent_food_logs').snapshots().map((snapshot) =>
+        snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
+  }
+
+  Stream<List<ActivityLog>> get frequentActivityLogStream {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return Stream.value([]);
+    return userDoc.collection('frequent_activity_logs').snapshots().map((snapshot) =>
+        snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
+  }
+
+
   // Add a food log
   Future<void> addFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('food_logs').add(log.toJson());
+    // Also add to the frequent food logs
+    await addFrequentFoodLog(log);
   }
 
   // Add an activity log
@@ -117,6 +135,8 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('activity_logs').add(log.toJson());
+    // Also add to the frequent activity logs
+    await addFrequentActivityLog(log);
   }
 
   // Add a weight log
@@ -124,5 +144,20 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('weight_logs').add(log.toJson());
+  }
+
+  // --- METHODS TO ADD ITEMS TO FREQUENT LISTS ---
+  Future<void> addFrequentFoodLog(FoodLog log) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+    // Use the food name as the document ID to avoid duplicates
+    await userDoc.collection('frequent_food_logs').doc(log.name).set(log.toJson());
+  }
+
+  Future<void> addFrequentActivityLog(ActivityLog log) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+    // Use the activity name as the document ID to avoid duplicates
+    await userDoc.collection('frequent_activity_logs').doc(log.name).set(log.toJson());
   }
 }

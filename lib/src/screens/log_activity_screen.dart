@@ -4,28 +4,26 @@ import 'package:intl/intl.dart';
 import 'package:zeno/src/models/activity_log.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 
-// --- FIX: Renamed class from LogFoodScreen to LogActivityScreen ---
 class LogActivityScreen extends StatefulWidget {
   const LogActivityScreen({super.key});
 
   @override
-  // --- FIX: Renamed State to match the new class name ---
   State<LogActivityScreen> createState() => _LogActivityScreenState();
 }
 
 class _LogActivityScreenState extends State<LogActivityScreen> {
   final _firebaseService = FirebaseService();
 
-  Future<void> _showAddActivityDialog() async {
-    final nameController = TextEditingController();
-    final caloriesController = TextEditingController();
+  Future<void> _showAddActivityDialog({ActivityLog? activityLog}) async {
+    final nameController = TextEditingController(text: activityLog?.name);
+    final caloriesController = TextEditingController(text: activityLog?.caloriesBurned.toString());
     final formKey = GlobalKey<FormState>();
 
     return showDialog<void>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Add Activity Entry'),
+          title: Text(activityLog == null ? 'Add Activity Entry' : 'Log Frequent Activity'),
           content: Form(
             key: formKey,
             child: Column(
@@ -34,16 +32,14 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Activity Name'),
-                  validator: (value) =>
-                  (value == null || value.isEmpty) ? 'Please enter a name' : null,
+                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
                 ),
                 TextFormField(
                   controller: caloriesController,
                   decoration: const InputDecoration(labelText: 'Calories Burned'),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (value) =>
-                  (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
                 ),
               ],
             ),
@@ -63,13 +59,64 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
                     caloriesBurned: int.parse(caloriesController.text),
                     date: DateTime.now(),
                   );
-                  // Call the service to save the data
                   _firebaseService.addActivityLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
             ),
           ],
+        );
+      },
+    );
+  }
+
+  // The dropdown menu for frequent activities
+  Widget _buildFrequentActivityMenu() {
+    return StreamBuilder<List<ActivityLog>>(
+      stream: _firebaseService.frequentActivityLogStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.star, color: Theme.of(context).disabledColor),
+                const SizedBox(width: 8),
+                Text(
+                  "From Favorites",
+                  style: TextStyle(color: Theme.of(context).disabledColor),
+                ),
+              ],
+            ),
+          );
+        }
+        final frequentLogs = snapshot.data!;
+        return PopupMenuButton<ActivityLog>(
+          // This offset tells the menu to appear 120 pixels above the button
+          offset: const Offset(0, -120),
+          onSelected: (ActivityLog activityLog) {
+            _showAddActivityDialog(activityLog: activityLog);
+          },
+          itemBuilder: (BuildContext context) {
+            return frequentLogs.map((ActivityLog log) {
+              return PopupMenuItem<ActivityLog>(
+                value: log,
+                child: Text(log.name),
+              );
+            }).toList();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const <Widget>[
+                Icon(Icons.star),
+                SizedBox(width: 8),
+                Text("From Favorites"),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -93,10 +140,12 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
 
           final allLogs = snapshot.data!;
           final today = DateTime.now();
-          final todaysLogs = allLogs.where((log) =>
+          final todaysLogs = allLogs
+              .where((log) =>
           log.date.year == today.year &&
               log.date.month == today.month &&
-              log.date.day == today.day).toList();
+              log.date.day == today.day)
+              .toList();
 
           if (todaysLogs.isEmpty) {
             return const Center(child: Text('No activities logged yet today.'));
@@ -131,9 +180,21 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddActivityDialog,
+        onPressed: () => _showAddActivityDialog(),
         tooltip: 'Add Activity',
         child: const Icon(Icons.fitness_center),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8.0,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: <Widget>[
+            const SizedBox(width: 4),
+            _buildFrequentActivityMenu(),
+          ],
+        ),
       ),
     );
   }

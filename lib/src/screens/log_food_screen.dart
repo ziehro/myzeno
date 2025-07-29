@@ -14,16 +14,17 @@ class LogFoodScreen extends StatefulWidget {
 class _LogFoodScreenState extends State<LogFoodScreen> {
   final _firebaseService = FirebaseService();
 
-  Future<void> _showAddFoodDialog() async {
-    final nameController = TextEditingController();
-    final caloriesController = TextEditingController();
+  // Dialog to add/edit a food log
+  Future<void> _showAddFoodDialog({FoodLog? foodLog}) async {
+    final nameController = TextEditingController(text: foodLog?.name);
+    final caloriesController = TextEditingController(text: foodLog?.calories.toString());
     final formKey = GlobalKey<FormState>();
 
     return showDialog<void>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Add Food Entry'),
+          title: Text(foodLog == null ? 'Add Food Entry' : 'Log Frequent Food'),
           content: Form(
             key: formKey,
             child: Column(
@@ -59,7 +60,6 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                     calories: int.parse(caloriesController.text),
                     date: DateTime.now(),
                   );
-                  // Call the service to save the data
                   _firebaseService.addFoodLog(newLog);
                   Navigator.of(context).pop();
                 }
@@ -71,13 +71,64 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
     );
   }
 
+  // The dropdown menu for frequent foods
+  Widget _buildFrequentFoodMenu() {
+    return StreamBuilder<List<FoodLog>>(
+      stream: _firebaseService.frequentFoodLogStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(Icons.star, color: Theme.of(context).disabledColor),
+                const SizedBox(width: 8),
+                Text(
+                  "From Favorites",
+                  style: TextStyle(color: Theme.of(context).disabledColor),
+                ),
+              ],
+            ),
+          );
+        }
+        final frequentLogs = snapshot.data!;
+        return PopupMenuButton<FoodLog>(
+          // This offset tells the menu to appear 120 pixels above the button
+          offset: const Offset(0, -120),
+          onSelected: (FoodLog foodLog) {
+            _showAddFoodDialog(foodLog: foodLog);
+          },
+          itemBuilder: (BuildContext context) {
+            return frequentLogs.map((FoodLog log) {
+              return PopupMenuItem<FoodLog>(
+                value: log,
+                child: Text(log.name),
+              );
+            }).toList();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const <Widget>[
+                Icon(Icons.star),
+                SizedBox(width: 8),
+                Text("From Favorites"),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Today\'s Log (${DateFormat.yMMMd().format(DateTime.now())})'),
       ),
-      // This StreamBuilder automatically listens for live changes from Firestore
       body: StreamBuilder<List<FoodLog>>(
         stream: _firebaseService.foodLogStream,
         builder: (context, snapshot) {
@@ -90,11 +141,12 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
 
           final allLogs = snapshot.data!;
           final today = DateTime.now();
-          final todaysLogs = allLogs.where((log) =>
+          final todaysLogs = allLogs
+              .where((log) =>
           log.date.year == today.year &&
               log.date.month == today.month &&
-              log.date.day == today.day
-          ).toList();
+              log.date.day == today.day)
+              .toList();
 
           if (todaysLogs.isEmpty) {
             return const Center(child: Text('No food logged yet today.'));
@@ -128,9 +180,21 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddFoodDialog,
+        onPressed: () => _showAddFoodDialog(),
         tooltip: 'Add Food',
         child: const Icon(Icons.add),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8.0,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: <Widget>[
+            const SizedBox(width: 4),
+            _buildFrequentFoodMenu(),
+          ],
+        ),
       ),
     );
   }
