@@ -6,7 +6,6 @@ import 'package:zeno/theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize Firebase using the auto-generated options file
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -21,9 +20,14 @@ class MyZenoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'MyZeno',
-      theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      // The AuthWrapper now decides the first screen to show
+
+      // --- THE THEME CONFIGURATION ---
+      theme: AppTheme.lightTheme,      // Sets the default light theme.
+      darkTheme: AppTheme.darkTheme,  // Sets the dark theme.
+      themeMode: ThemeMode.system,    // This tells the app to automatically switch!
+      // -------------------------------
+
       home: const AuthWrapper(),
     );
   }
