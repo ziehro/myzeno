@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:zeno/src/models/activity_log.dart';
 import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/models/user_goal.dart';
@@ -10,31 +9,44 @@ import 'package:zeno/src/screens/goal_setting_screen.dart';
 import 'package:zeno/src/screens/log_activity_screen.dart';
 import 'package:zeno/src/screens/log_food_screen.dart';
 import 'package:zeno/src/screens/progress_screen.dart';
+import 'package:zeno/src/services/firebase_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  final UserGoal userGoal;
-  final UserProfile userProfile;
-
-  const HomeScreen({
-    super.key,
-    required this.userGoal,
-    required this.userProfile,
-  });
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late double _currentWeight;
+  final FirebaseService _firebaseService = FirebaseService();
+
+  UserProfile? _userProfile;
+  UserGoal? _userGoal;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    final weightLogBox = Hive.box<WeightLog>('weight_log_box');
-    final latestWeightLog =
-    weightLogBox.values.isNotEmpty ? weightLogBox.values.last : null;
-    _currentWeight = latestWeightLog?.weight ?? widget.userProfile.startWeight;
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    if (!mounted) return;
+    if (!_isLoading) {
+      setState(() => _isLoading = true);
+    }
+
+    final profile = await _firebaseService.getUserProfile();
+    final goal = await _firebaseService.getUserGoal();
+
+    if (mounted) {
+      setState(() {
+        _userProfile = profile;
+        _userGoal = goal;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _showLogWeightDialog() async {
@@ -50,21 +62,11 @@ class _HomeScreenState extends State<HomeScreen> {
             key: formKey,
             child: TextFormField(
               controller: weightController,
-              decoration: const InputDecoration(
-                labelText: 'Weight (lbs)',
-                hintText: 'e.g., 178.5',
-              ),
+              decoration: const InputDecoration(labelText: 'Weight (lbs)'),
               autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d*'))
-              ],
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter a weight';
-                }
-                return null;
-              },
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d*'))],
+              validator: (value) => (value == null || value.isEmpty) ? 'Please enter a weight' : null,
             ),
           ),
           actions: <Widget>[
@@ -77,15 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   final newWeight = double.parse(weightController.text);
-
-                  final newLog =
-                  WeightLog(date: DateTime.now(), weight: newWeight);
-                  Hive.box<WeightLog>('weight_log_box').add(newLog);
-
-                  setState(() {
-                    _currentWeight = newWeight;
-                  });
-
+                  final newLog = WeightLog(id: '', date: DateTime.now(), weight: newWeight);
+                  _firebaseService.addWeightLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
@@ -96,12 +91,54 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // --- NEW METHOD: Confirmation Dialog for Signing Out ---
+  Future<void> _showSignOutConfirmationDialog() async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Sign Out'),
+          content: const Text('Are you sure you want to sign out?'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Closes the dialog
+              },
+            ),
+            TextButton(
+              child: const Text('Sign Out'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+                _firebaseService.signOut();  // Perform the sign out
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final double actualLoss = widget.userProfile.startWeight - _currentWeight;
-    final int daysPassed = DateTime.now().difference(widget.userProfile.createdAt).inDays;
-    final double lbsPerDay = widget.userGoal.lbsToLose / widget.userGoal.days;
-    final double theoreticalLoss = (daysPassed * lbsPerDay) > 0 ? (daysPassed * lbsPerDay) : 0;
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (_userProfile == null || _userGoal == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Error')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Could not load user data.'),
+              ElevatedButton(onPressed: _loadInitialData, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -109,52 +146,49 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const ProgressScreen()),
-              );
+              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const ProgressScreen()));
             },
             icon: const Icon(Icons.timeline),
             tooltip: 'View Progress',
           ),
           IconButton(
             onPressed: () {
-              // --- THIS IS THE CORRECTED NAVIGATION FOR EDITING ---
-              // It 'pushes' the screen on top, allowing for a back button.
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => GoalSettingScreen(
-                    userProfile: widget.userProfile,
-                    userGoal: widget.userGoal,
-                  ),
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (context) => GoalSettingScreen(
+                  userProfile: _userProfile,
+                  userGoal: _userGoal,
                 ),
-              ).then((_) {
-                // This 'then' block runs when we come back from the edit screen.
-                // It forces the home screen to rebuild with any new data.
-                setState(() {});
-              });
+              )).then((_) => _loadInitialData());
             },
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Edit Profile & Goal',
           ),
+          IconButton(
+            // --- UPDATED to call the new dialog method ---
+            onPressed: _showSignOutConfirmationDialog,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sign Out',
+          ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Text("Welcome Back!",
-              style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 32),
-          _buildCalorieDashboard(),
-          const SizedBox(height: 24),
-          _buildWeightDashboard(actualLoss, theoreticalLoss),
-        ],
+      body: RefreshIndicator(
+        onRefresh: _loadInitialData,
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
+          children: [
+            Text("Welcome, ${_userProfile!.email}", style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 32),
+            _buildCalorieDashboard(),
+            const SizedBox(height: 24),
+            _buildWeightDashboard(),
+          ],
+        ),
       ),
-      floatingActionButton: null, // FAB was removed
     );
   }
 
   Widget _buildCalorieDashboard() {
-    final calorieTarget = widget.userProfile.recommendedDailyIntake - widget.userGoal.dailyCalorieDeficitTarget;
+    final calorieTarget = _userProfile!.recommendedDailyIntake - _userGoal!.dailyCalorieDeficitTarget;
 
     return Card(
       elevation: 2,
@@ -164,27 +198,23 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Today's Balance",
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
+            Text("Today's Balance", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            ValueListenableBuilder(
-              valueListenable: Hive.box<FoodLog>('food_log_box').listenable(),
-              builder: (context, Box<FoodLog> foodBox, _) {
-                return ValueListenableBuilder(
-                  valueListenable: Hive.box<ActivityLog>('activity_log_box').listenable(),
-                  builder: (context, Box<ActivityLog> activityBox, _) {
+            StreamBuilder<List<FoodLog>>(
+              stream: _firebaseService.foodLogStream,
+              builder: (context, foodSnapshot) {
+                return StreamBuilder<List<ActivityLog>>(
+                  stream: _firebaseService.activityLogStream,
+                  builder: (context, activitySnapshot) {
+                    if (foodSnapshot.connectionState == ConnectionState.waiting || activitySnapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
                     final today = DateTime.now();
+                    bool isSameDay(DateTime date) => date.year == today.year && date.month == today.month && date.day == today.day;
 
-                    final caloriesConsumed = foodBox.values.where((log) =>
-                    log.date.year == today.year && log.date.month == today.month && log.date.day == today.day)
-                        .fold(0, (sum, item) => sum + item.calories);
-
-                    final caloriesBurned = activityBox.values.where((log) =>
-                    log.date.year == today.year && log.date.month == today.month && log.date.day == today.day)
-                        .fold(0, (sum, item) => sum + item.caloriesBurned);
+                    final caloriesConsumed = (foodSnapshot.data ?? []).where((log) => isSameDay(log.date)).fold(0, (sum, item) => sum + item.calories);
+                    final caloriesBurned = (activitySnapshot.data ?? []).where((log) => isSameDay(log.date)).fold(0, (sum, item) => sum + item.caloriesBurned);
 
                     final netCalories = caloriesConsumed - caloriesBurned;
                     final caloriesRemaining = calorieTarget - netCalories;
@@ -216,20 +246,12 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => const LogFoodScreen()),
-                    );
-                  },
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const LogFoodScreen())),
                   icon: const Icon(Icons.restaurant_menu),
                   label: const Text("Log Food"),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => const LogActivityScreen()),
-                    );
-                  },
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const LogActivityScreen())),
                   icon: const Icon(Icons.fitness_center),
                   label: const Text("Log Activity"),
                 ),
@@ -241,35 +263,49 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildWeightDashboard(double actualLoss, double theoreticalLoss) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Weight Progress",
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            _buildInfoRow("Starting Weight:", "${widget.userProfile.startWeight.toStringAsFixed(1)} lbs"),
-            _buildInfoRow("Current Weight:", "${_currentWeight.toStringAsFixed(1)} lbs"),
-            const Divider(height: 24),
-            _buildInfoRow("Theoretical Loss:", "${theoreticalLoss.toStringAsFixed(1)} lbs"),
-            _buildInfoRow("Actual Loss:", "${actualLoss.toStringAsFixed(1)} lbs", isBold: true, valueColor: Colors.green.shade700),
-            const SizedBox(height: 16),
-            Center(
-              child: ElevatedButton(
-                  onPressed: _showLogWeightDialog,
-                  child: const Text("Log Today's Weight")),
-            )
-          ],
-        ),
-      ),
+  Widget _buildWeightDashboard() {
+    return StreamBuilder<List<WeightLog>>(
+      stream: _firebaseService.weightLogStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          // Show a placeholder while loading to prevent layout shifts
+          return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
+        }
+
+        final weightLogs = snapshot.data ?? [];
+        final currentWeight = weightLogs.isNotEmpty ? weightLogs.first.weight : _userProfile!.startWeight;
+        final actualLoss = _userProfile!.startWeight - currentWeight;
+
+        final int daysPassed = DateTime.now().difference(_userProfile!.createdAt).inDays;
+        final double lbsPerDay = _userGoal!.days > 0 ? _userGoal!.lbsToLose / _userGoal!.days : 0;
+        final double theoreticalLoss = (daysPassed * lbsPerDay) > 0 ? (daysPassed * lbsPerDay) : 0;
+
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Weight Progress", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                _buildInfoRow("Starting Weight:", "${_userProfile!.startWeight.toStringAsFixed(1)} lbs"),
+                _buildInfoRow("Current Weight:", "${currentWeight.toStringAsFixed(1)} lbs"),
+                const Divider(height: 24),
+                _buildInfoRow("Theoretical Loss:", "${theoreticalLoss.toStringAsFixed(1)} lbs"),
+                _buildInfoRow("Actual Loss:", "${actualLoss.toStringAsFixed(1)} lbs", isBold: true, valueColor: Colors.green.shade700),
+                const SizedBox(height: 16),
+                Center(
+                  child: ElevatedButton(
+                      onPressed: _showLogWeightDialog,
+                      child: const Text("Log Today's Weight")),
+                )
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

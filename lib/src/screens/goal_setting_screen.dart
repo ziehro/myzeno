@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hive/hive.dart';
 import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
-import 'package:zeno/src/screens/decision_screen.dart';
+import 'package:zeno/src/models/weight_log.dart';
+import 'package:zeno/src/screens/auth_wrapper.dart';
+import 'package:zeno/src/services/firebase_service.dart';
 
 class GoalSettingScreen extends StatefulWidget {
-  // These are optional. If they are provided, we're in "edit mode".
   final UserProfile? userProfile;
   final UserGoal? userGoal;
+  final double? currentWeight;
 
   const GoalSettingScreen({
     super.key,
     this.userProfile,
     this.userGoal,
+    this.currentWeight,
   });
 
   @override
@@ -21,6 +23,7 @@ class GoalSettingScreen extends StatefulWidget {
 }
 
 class _GoalSettingScreenState extends State<GoalSettingScreen> {
+  final _firebaseService = FirebaseService();
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _lbsController;
   late final TextEditingController _daysController;
@@ -30,28 +33,25 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   Sex? _selectedSex;
   ActivityLevel? _selectedActivityLevel;
 
-  // A flag to know if we are editing or creating for the first time
   late bool _isEditing;
 
   @override
   void initState() {
     super.initState();
-    // Determine if we are in edit mode based on passed-in data
     _isEditing = widget.userProfile != null && widget.userGoal != null;
+    final weightToDisplay = _isEditing ? (widget.currentWeight ?? widget.userProfile!.startWeight) : '';
 
-    // Pre-fill the controllers if we are in edit mode, otherwise leave them empty
     _ageController = TextEditingController(text: _isEditing ? widget.userProfile!.age.toString() : '');
     _heightController = TextEditingController(text: _isEditing ? widget.userProfile!.height.toString() : '');
-    _weightController = TextEditingController(text: _isEditing ? widget.userProfile!.startWeight.toString() : '');
+    _weightController = TextEditingController(text: weightToDisplay.toString());
     _lbsController = TextEditingController(text: _isEditing ? widget.userGoal!.lbsToLose.toString() : '');
     _daysController = TextEditingController(text: _isEditing ? widget.userGoal!.days.toString() : '');
 
-    // Pre-select the dropdowns if we are in edit mode
     _selectedSex = _isEditing ? widget.userProfile!.sex : null;
     _selectedActivityLevel = _isEditing ? widget.userProfile!.activityLevel : null;
   }
 
-  void _saveData() {
+  Future<void> _saveData() async {
     final isValid = _formKey.currentState!.validate();
     if (!isValid || _selectedSex == null || _selectedActivityLevel == null) {
       // Show error messages if dropdowns are not selected
@@ -72,11 +72,20 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
       return;
     }
 
-    // Preserve the original creation date if editing, otherwise use now.
-    final DateTime creationDate = _isEditing ? widget.userProfile!.createdAt : DateTime.now();
+    final currentUser = _firebaseService.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Not logged in')));
+      return;
+    }
+
+    final newWeight = double.parse(_weightController.text);
+    final startWeight = _isEditing ? widget.userProfile!.startWeight : newWeight;
+    final creationDate = _isEditing ? widget.userProfile!.createdAt : DateTime.now();
 
     final profile = UserProfile(
-      startWeight: double.parse(_weightController.text),
+      uid: currentUser.uid,
+      email: currentUser.email!,
+      startWeight: startWeight,
       height: double.parse(_heightController.text),
       age: int.parse(_ageController.text),
       sex: _selectedSex!,
@@ -89,16 +98,21 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
       days: int.parse(_daysController.text),
     );
 
-    Hive.box<UserProfile>('user_profile_box').put(0, profile);
-    Hive.box<UserGoal>('user_goal_box').put(0, goal);
+    await _firebaseService.saveUserProfileAndGoal(profile, goal);
 
-    if (mounted) {
-      if (_isEditing) {
-        Navigator.of(context).pop(); // Just go back to the home screen
-      } else {
-        // On first setup, clear the navigation stack and go to the DecisionScreen
+    if (_isEditing) {
+      if (newWeight != widget.currentWeight) {
+        final newLog = WeightLog(id: '', date: DateTime.now(), weight: newWeight);
+        await _firebaseService.addWeightLog(newLog);
+      }
+      if (mounted) Navigator.of(context).pop();
+    } else {
+      final newLog = WeightLog(id: '', date: DateTime.now(), weight: newWeight);
+      await _firebaseService.addWeightLog(newLog);
+
+      if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const DecisionScreen()),
+          MaterialPageRoute(builder: (context) => const AuthWrapper()),
               (route) => false,
         );
       }
@@ -119,7 +133,6 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // The back button now appears automatically when editing
         title: Text(_isEditing ? "Edit Profile & Goal" : "Your Profile & Goal"),
       ),
       body: SingleChildScrollView(
@@ -129,7 +142,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (!_isEditing) // Only show this on first setup
+              if (!_isEditing)
                 Text(
                   "Let's find your path to balance.",
                   style: Theme.of(context).textTheme.headlineSmall,
@@ -180,8 +193,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
                     _selectedSex = newValue;
                   });
                 },
-                validator: (value) =>
-                value == null ? 'Please select a value' : null,
+                validator: (value) => value == null ? 'Please select a value' : null,
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<ActivityLevel>(
@@ -217,8 +229,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
                     _selectedActivityLevel = newValue;
                   });
                 },
-                validator: (value) =>
-                value == null ? 'Please select a value' : null,
+                validator: (value) => value == null ? 'Please select a value' : null,
               ),
               const SizedBox(height: 32),
               Text("Your Goal", style: Theme.of(context).textTheme.titleLarge),
@@ -252,6 +263,8 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
     );
   }
 
+  // --- THIS IS THE FIX ---
+  // The full body of the helper function is now included.
   TextFormField _buildTextField({
     required TextEditingController controller,
     required String label,

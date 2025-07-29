@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/activity_log.dart';
+import 'package:zeno/src/services/firebase_service.dart';
 
+// --- FIX: Renamed class from LogFoodScreen to LogActivityScreen ---
 class LogActivityScreen extends StatefulWidget {
   const LogActivityScreen({super.key});
 
   @override
+  // --- FIX: Renamed State to match the new class name ---
   State<LogActivityScreen> createState() => _LogActivityScreenState();
 }
 
 class _LogActivityScreenState extends State<LogActivityScreen> {
+  final _firebaseService = FirebaseService();
+
   Future<void> _showAddActivityDialog() async {
     final nameController = TextEditingController();
     final caloriesController = TextEditingController();
@@ -30,14 +34,16 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Activity Name'),
-                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
+                  validator: (value) =>
+                  (value == null || value.isEmpty) ? 'Please enter a name' : null,
                 ),
                 TextFormField(
                   controller: caloriesController,
                   decoration: const InputDecoration(labelText: 'Calories Burned'),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                  validator: (value) =>
+                  (value == null || value.isEmpty) ? 'Please enter calories' : null,
                 ),
               ],
             ),
@@ -52,11 +58,13 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   final newLog = ActivityLog(
+                    id: '', // Firestore generates ID
                     name: nameController.text,
                     caloriesBurned: int.parse(caloriesController.text),
                     date: DateTime.now(),
                   );
-                  Hive.box<ActivityLog>('activity_log_box').add(newLog);
+                  // Call the service to save the data
+                  _firebaseService.addActivityLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
@@ -73,15 +81,22 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
       appBar: AppBar(
         title: Text('Today\'s Activity (${DateFormat.yMMMd().format(DateTime.now())})'),
       ),
-      body: ValueListenableBuilder(
-        valueListenable: Hive.box<ActivityLog>('activity_log_box').listenable(),
-        builder: (context, Box<ActivityLog> box, _) {
+      body: StreamBuilder<List<ActivityLog>>(
+        stream: _firebaseService.activityLogStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No activities logged yet.'));
+          }
+
+          final allLogs = snapshot.data!;
           final today = DateTime.now();
-          final todaysLogs = box.values.where((log) =>
+          final todaysLogs = allLogs.where((log) =>
           log.date.year == today.year &&
               log.date.month == today.month &&
-              log.date.day == today.day
-          ).toList();
+              log.date.day == today.day).toList();
 
           if (todaysLogs.isEmpty) {
             return const Center(child: Text('No activities logged yet today.'));
@@ -105,7 +120,8 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
                     final log = todaysLogs[index];
                     return ListTile(
                       title: Text(log.name),
-                      trailing: Text('-${log.caloriesBurned} kcal', style: TextStyle(color: Colors.green.shade700)),
+                      trailing: Text('-${log.caloriesBurned} kcal',
+                          style: TextStyle(color: Colors.green.shade700)),
                     );
                   },
                 ),

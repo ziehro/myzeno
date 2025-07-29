@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/food_log.dart';
+import 'package:zeno/src/services/firebase_service.dart';
 
 class LogFoodScreen extends StatefulWidget {
   const LogFoodScreen({super.key});
@@ -12,7 +12,8 @@ class LogFoodScreen extends StatefulWidget {
 }
 
 class _LogFoodScreenState extends State<LogFoodScreen> {
-  // --- Function to show the pop-up dialog for adding food ---
+  final _firebaseService = FirebaseService();
+
   Future<void> _showAddFoodDialog() async {
     final nameController = TextEditingController();
     final caloriesController = TextEditingController();
@@ -53,12 +54,13 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   final newLog = FoodLog(
+                    id: '', // Firestore generates the ID
                     name: nameController.text,
                     calories: int.parse(caloriesController.text),
                     date: DateTime.now(),
                   );
-                  // Use .add() to append to the box
-                  Hive.box<FoodLog>('food_log_box').add(newLog);
+                  // Call the service to save the data
+                  _firebaseService.addFoodLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
@@ -71,19 +73,24 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final foodBox = Hive.box<FoodLog>('food_log_box');
-
     return Scaffold(
       appBar: AppBar(
         title: Text('Today\'s Log (${DateFormat.yMMMd().format(DateTime.now())})'),
       ),
-      // This builder automatically listens for changes in the database box
-      body: ValueListenableBuilder(
-        valueListenable: foodBox.listenable(),
-        builder: (context, Box<FoodLog> box, _) {
-          // Filter logs to show only entries from today
+      // This StreamBuilder automatically listens for live changes from Firestore
+      body: StreamBuilder<List<FoodLog>>(
+        stream: _firebaseService.foodLogStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            return const Center(child: Text('No food logged yet today.'));
+          }
+
+          final allLogs = snapshot.data!;
           final today = DateTime.now();
-          final todaysLogs = box.values.where((log) =>
+          final todaysLogs = allLogs.where((log) =>
           log.date.year == today.year &&
               log.date.month == today.month &&
               log.date.day == today.day
@@ -93,7 +100,6 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
             return const Center(child: Text('No food logged yet today.'));
           }
 
-          // Calculate the total calories for the day
           final totalCalories = todaysLogs.fold(0, (sum, item) => sum + item.calories);
 
           return Column(
@@ -113,7 +119,6 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                     return ListTile(
                       title: Text(log.name),
                       trailing: Text('${log.calories} kcal'),
-                      // TODO: Add functionality to delete or edit an entry
                     );
                   },
                 ),
