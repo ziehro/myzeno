@@ -1,4 +1,4 @@
-package com.ziehro.zeno.zeno;
+package com.ziehro.zeno;
 
 import io.flutter.embedding.android.FlutterActivity;
 
