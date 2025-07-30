@@ -2,37 +2,34 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Recipe {
   final String id;
-  final String title;
+  final String name;
   final String ingredients;
   final String instructions;
-  final String imageUrl; // URL to an image for the recipe
 
   Recipe({
     required this.id,
-    required this.title,
+    required this.name,
     required this.ingredients,
     required this.instructions,
-    required this.imageUrl,
   });
 
+  // Factory constructor to create a Recipe from a Firestore document
   factory Recipe.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return Recipe(
       id: doc.id,
-      title: data['title'] ?? 'No Title',
-      ingredients: data['ingredients'] ?? '',
-      instructions: data['instructions'] ?? '',
-      imageUrl: data['imageUrl'] ?? 'https://via.placeholder.com/150', // Default image
+      name: data['name'] ?? 'No Name',
+      ingredients: data['ingredients'] ?? 'No Ingredients',
+      instructions: data['instructions'] ?? 'No Instructions',
     );
   }
 
-  Map<String, dynamic> toMap() {
+  // Method to convert a Recipe object to a map for Firestore
+  Map<String, dynamic> toFirestore() {
     return {
-      'title': title,
+      'name': name,
       'ingredients': ingredients,
       'instructions': instructions,
-      'imageUrl': imageUrl,
-      'createdAt': FieldValue.serverTimestamp(), // To sort by newest
     };
   }
 }

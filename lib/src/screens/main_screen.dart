@@ -3,7 +3,7 @@ import 'package:zeno/src/screens/home_screen.dart';
 import 'package:zeno/src/screens/log_activity_screen.dart';
 import 'package:zeno/src/screens/log_food_screen.dart';
 import 'package:zeno/src/screens/progress_screen.dart';
-import 'package:zeno/src/screens/tips_and_recipes_page.dart';
+import 'package:zeno/src/screens/tips_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -21,7 +21,7 @@ class _MainScreenState extends State<MainScreen> {
     const LogFoodScreen(),
     const LogActivityScreen(),
     const ProgressScreen(),
-    const TipsAndRecipesPage(),
+    const TipsScreen(),
   ];
 
   @override

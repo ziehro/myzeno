@@ -5,6 +5,8 @@ import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
+import 'package:zeno/src/models/tip.dart';
+import 'package:zeno/src/models/recipe.dart';
 
 class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -96,6 +98,35 @@ class FirebaseService {
     if (userDoc == null) return Stream.value([]);
     return userDoc.collection('activity_logs').orderBy('date', descending: true).snapshots().map((snapshot) =>
         snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
+  }
+
+  // --- Tip Methods ---
+
+  // Get a stream of tips
+  Stream<List<Tip>> get tipsStream {
+    return _firestore.collection('tips').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) => Tip.fromFirestore(doc)).toList();
+    });
+  }
+
+  // Add a new tip
+  Future<void> addTip(Tip tip) async {
+    await _firestore.collection('tips').add(tip.toFirestore());
+  }
+
+
+  // --- Recipe Methods ---
+
+  // Get a stream of recipes
+  Stream<List<Recipe>> get recipesStream {
+    return _firestore.collection('recipes').snapshots().map((snapshot) {
+      return snapshot.docs.map((doc) => Recipe.fromFirestore(doc)).toList();
+    });
+  }
+
+  // Add a new recipe
+  Future<void> addRecipe(Recipe recipe) async {
+    await _firestore.collection('recipes').add(recipe.toFirestore());
   }
 
   Stream<List<WeightLog>> get weightLogStream {

@@ -10,6 +10,7 @@ import 'package:zeno/src/screens/log_activity_screen.dart';
 import 'package:zeno/src/screens/log_food_screen.dart';
 import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/screens/tips_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -176,8 +177,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            Text("Welcome, ${_userProfile!.email}", style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 32),
             _buildCalorieDashboard(),
             const SizedBox(height: 24),
             _buildWeightDashboard(),
