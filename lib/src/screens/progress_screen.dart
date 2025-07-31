@@ -110,7 +110,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         Text("Daily Summaries", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         SizedBox(
-          height: 180, // Height is kept the same
+          height: 220, // Increased height
           child: PageView.builder(
             controller: PageController(viewportFraction: 0.9),
             itemCount: dailyStats.length,
@@ -330,25 +330,30 @@ class _ProgressScreenState extends State<ProgressScreen> {
         if (snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData || snapshot.data!.isEmpty) {
           return const SizedBox.shrink();
         }
-        final recentLogs = snapshot.data!.take(5);
+        final recentLogs = snapshot.data!;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Divider(),
             const SizedBox(height: 8),
-            Text("Recent Logs", style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Table(
-              columnWidths: const {0: FlexColumnWidth(), 1: IntrinsicColumnWidth()},
-              children: recentLogs.map((log) {
-                return TableRow(children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Text(DateFormat('MMMM d, yyyy').format(log.date)),
+            DropdownButtonFormField<WeightLog>(
+              decoration: InputDecoration(
+                labelText: "Recent Logs",
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+              ),
+              items: recentLogs.map((log) {
+                return DropdownMenuItem<WeightLog>(
+                  value: log,
+                  child: Text(
+                    '${DateFormat('MMMM d, yyyy').format(log.date)} - ${log.weight.toStringAsFixed(1)} lbs',
                   ),
-                  Text("${log.weight.toStringAsFixed(1)} lbs", style: const TextStyle(fontWeight: FontWeight.bold)),
-                ]);
+                );
               }).toList(),
+              onChanged: (WeightLog? newValue) {
+                // Handle the selection if needed
+              },
             ),
           ],
         );
