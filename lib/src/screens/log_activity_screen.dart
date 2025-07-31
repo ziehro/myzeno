@@ -93,7 +93,6 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
         }
         final frequentLogs = snapshot.data!;
         return PopupMenuButton<ActivityLog>(
-          // This offset tells the menu to appear 120 pixels above the button
           offset: const Offset(0, -120),
           onSelected: (ActivityLog activityLog) {
             _showAddActivityDialog(activityLog: activityLog);
@@ -102,7 +101,20 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
             return frequentLogs.map((ActivityLog log) {
               return PopupMenuItem<ActivityLog>(
                 value: log,
-                child: Text(log.name),
+                // --- THIS IS THE CHANGE ---
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(log.name),
+                    Text(
+                      '${log.caloriesBurned} kcal',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
               );
             }).toList();
           },
