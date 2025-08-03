@@ -14,8 +14,8 @@ class LogFoodScreen extends StatefulWidget {
 class _LogFoodScreenState extends State<LogFoodScreen> {
   final _firebaseService = FirebaseService();
 
-  // Dialog to add/edit a food log
-  Future<void> _showAddFoodDialog({FoodLog? foodLog}) async {
+  // Dialog to add or edit a food log
+  Future<void> _showAddEditFoodDialog({FoodLog? foodLog}) async {
     final nameController = TextEditingController(text: foodLog?.name);
     final caloriesController = TextEditingController(text: foodLog?.calories.toString());
     final formKey = GlobalKey<FormState>();
@@ -24,7 +24,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text(foodLog == null ? 'Add Food Entry' : 'Log Frequent Food'),
+          title: Text(foodLog == null ? 'Add Food Entry' : 'Edit Food Entry'),
           content: Form(
             key: formKey,
             child: Column(
@@ -54,13 +54,20 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
               child: const Text('Save'),
               onPressed: () {
                 if (formKey.currentState!.validate()) {
-                  final newLog = FoodLog(
-                    id: '', // Firestore generates the ID
+                  final logToSave = FoodLog(
+                    // Use existing ID if editing, otherwise Firestore generates it
+                    id: foodLog?.id ?? '',
                     name: nameController.text,
                     calories: int.parse(caloriesController.text),
-                    date: DateTime.now(),
+                    // Use existing date if editing, otherwise use now
+                    date: foodLog?.date ?? DateTime.now(),
                   );
-                  _firebaseService.addFoodLog(newLog);
+
+                  if (foodLog != null) {
+                    _firebaseService.updateFoodLog(logToSave);
+                  } else {
+                    _firebaseService.addFoodLog(logToSave);
+                  }
                   Navigator.of(context).pop();
                 }
               },
@@ -70,6 +77,35 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
       },
     );
   }
+
+  // Dialog to choose between editing or deleting
+  Future<void> _showEditDeleteDialog(FoodLog log) async {
+    showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(log.name),
+            content: const Text("Would you like to edit or delete this item?"),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _showAddEditFoodDialog(foodLog: log);
+                },
+                child: const Text("Edit"),
+              ),
+              TextButton(
+                onPressed: () {
+                  _firebaseService.deleteFoodLog(log.id);
+                  Navigator.of(context).pop();
+                },
+                child: const Text("Delete", style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          );
+        });
+  }
+
 
   // The dropdown menu for frequent foods
   Widget _buildFrequentFoodMenu() {
@@ -96,13 +132,18 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
         return PopupMenuButton<FoodLog>(
           offset: const Offset(0, -120),
           onSelected: (FoodLog foodLog) {
-            _showAddFoodDialog(foodLog: foodLog);
+            // Re-logging a favorite creates a new entry
+            _firebaseService.addFoodLog(FoodLog(
+                id: '',
+                name: foodLog.name,
+                calories: foodLog.calories,
+                date: DateTime.now()
+            ));
           },
           itemBuilder: (BuildContext context) {
             return frequentLogs.map((FoodLog log) {
               return PopupMenuItem<FoodLog>(
                 value: log,
-                // --- THIS IS THE CHANGE ---
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -183,6 +224,8 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                     return ListTile(
                       title: Text(log.name),
                       trailing: Text('${log.calories} kcal'),
+                      // Add the long-press gesture here
+                      onLongPress: () => _showEditDeleteDialog(log),
                     );
                   },
                 ),
@@ -192,7 +235,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddFoodDialog(),
+        onPressed: () => _showAddEditFoodDialog(),
         tooltip: 'Add Food',
         child: const Icon(Icons.add),
       ),

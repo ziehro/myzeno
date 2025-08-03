@@ -61,8 +61,6 @@ class FirebaseService {
     await userDoc.collection('goals').doc('main_goal').set(goal.toJson());
   }
 
-  // --- NEW DATA FETCHING METHODS ---
-
   // Get UserProfile
   Future<UserProfile?> getUserProfile() async {
     final userDoc = _userDocRef;
@@ -100,35 +98,6 @@ class FirebaseService {
         snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
   }
 
-  // --- Tip Methods ---
-
-  // Get a stream of tips
-  Stream<List<Tip>> get tipsStream {
-    return _firestore.collection('tips').snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) => Tip.fromFirestore(doc)).toList();
-    });
-  }
-
-  // Add a new tip
-  Future<void> addTip(Tip tip) async {
-    await _firestore.collection('tips').add(tip.toFirestore());
-  }
-
-
-  // --- Recipe Methods ---
-
-  // Get a stream of recipes
-  Stream<List<Recipe>> get recipesStream {
-    return _firestore.collection('recipes').snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) => Recipe.fromFirestore(doc)).toList();
-    });
-  }
-
-  // Add a new recipe
-  Future<void> addRecipe(Recipe recipe) async {
-    await _firestore.collection('recipes').add(recipe.toFirestore());
-  }
-
   Stream<List<WeightLog>> get weightLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
@@ -136,7 +105,13 @@ class FirebaseService {
         snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList());
   }
 
-  // --- STREAMS FOR FREQUENTLY USED ITEMS ---
+  // --- Tip & Recipe Methods ---
+  Stream<List<Tip>> get tipsStream => _firestore.collection('tips').snapshots().map((s) => s.docs.map((d) => Tip.fromFirestore(d)).toList());
+  Future<void> addTip(Tip tip) async => await _firestore.collection('tips').add(tip.toFirestore());
+  Stream<List<Recipe>> get recipesStream => _firestore.collection('recipes').snapshots().map((s) => s.docs.map((d) => Recipe.fromFirestore(d)).toList());
+  Future<void> addRecipe(Recipe recipe) async => await _firestore.collection('recipes').add(recipe.toFirestore());
+
+  // --- FREQUENT LOG STREAMS ---
   Stream<List<FoodLog>> get frequentFoodLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
@@ -151,44 +126,67 @@ class FirebaseService {
         snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
   }
 
-
-  // Add a food log
+  // --- LOGGING METHODS (ADD) ---
   Future<void> addFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('food_logs').add(log.toJson());
-    // Also add to the frequent food logs
     await addFrequentFoodLog(log);
   }
 
-  // Add an activity log
   Future<void> addActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('activity_logs').add(log.toJson());
-    // Also add to the frequent activity logs
     await addFrequentActivityLog(log);
   }
 
-  // Add a weight log
   Future<void> addWeightLog(WeightLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('weight_logs').add(log.toJson());
   }
 
-  // --- METHODS TO ADD ITEMS TO FREQUENT LISTS ---
+  // --- NEW: LOGGING METHODS (UPDATE) ---
+  Future<void> updateFoodLog(FoodLog log) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+    await userDoc.collection('food_logs').doc(log.id).update(log.toJson());
+    // Also update the frequent log to match
+    await addFrequentFoodLog(log);
+  }
+
+  Future<void> updateActivityLog(ActivityLog log) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+    await userDoc.collection('activity_logs').doc(log.id).update(log.toJson());
+    // Also update the frequent log to match
+    await addFrequentActivityLog(log);
+  }
+
+  // --- NEW: LOGGING METHODS (DELETE) ---
+  Future<void> deleteFoodLog(String logId) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+    await userDoc.collection('food_logs').doc(logId).delete();
+  }
+
+  Future<void> deleteActivityLog(String logId) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+    await userDoc.collection('activity_logs').doc(logId).delete();
+  }
+
+  // --- METHODS TO MANAGE FREQUENT LISTS ---
   Future<void> addFrequentFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
-    // Use the food name as the document ID to avoid duplicates
     await userDoc.collection('frequent_food_logs').doc(log.name).set(log.toJson());
   }
 
   Future<void> addFrequentActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
-    // Use the activity name as the document ID to avoid duplicates
     await userDoc.collection('frequent_activity_logs').doc(log.name).set(log.toJson());
   }
 }

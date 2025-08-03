@@ -49,6 +49,60 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'profile': profile, 'goal': goal};
   }
 
+  // Method to show the daily details dialog
+  Future<void> _showDailyDetailsDialog(BuildContext context, _DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
+    final day = stat.date;
+    final foodForDay = allFood.where((log) => log.date.year == day.year && log.date.month == day.month && log.date.day == day.day).toList();
+    final activitiesForDay = allActivities.where((log) => log.date.year == day.year && log.date.month == day.month && log.date.day == day.day).toList();
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Details for ${_formatDate(day)}"),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Food Intake", style: Theme.of(context).textTheme.titleMedium),
+                  const Divider(),
+                  if (foodForDay.isEmpty) const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text("No food logged for this day."),
+                  ),
+                  ...foodForDay.map((log) => ListTile(
+                    title: Text(log.name),
+                    trailing: Text("${log.calories} kcal"),
+                  )),
+                  const SizedBox(height: 24),
+                  Text("Activities", style: Theme.of(context).textTheme.titleMedium),
+                  const Divider(),
+                  if (activitiesForDay.isEmpty) const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    child: Text("No activities logged for this day."),
+                  ),
+                  ...activitiesForDay.map((log) => ListTile(
+                    title: Text(log.name),
+                    trailing: Text("${log.caloriesBurned} kcal"),
+                  )),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("Close"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,7 +164,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         Text("Daily Summaries", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         SizedBox(
-          height: 220, // Increased height
+          height: 255,
           child: PageView.builder(
             controller: PageController(viewportFraction: 0.9),
             itemCount: dailyStats.length,
@@ -122,27 +176,38 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 elevation: 4,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                // This will prevent the content from overflowing
                 clipBehavior: Clip.antiAlias,
                 child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  // This allows the content to scroll if it's too tall
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_formatDate(stat.date), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                        const Divider(height: 20),
-                        _statRow("Calories In:", "${stat.caloriesIn.toInt()} kcal"),
-                        _statRow("Calories Out:", "${totalCaloriesOut.toInt()} kcal"),
-                        const SizedBox(height: 8),
-                        _statRow("Net vs Goal:", "${stat.differenceFromGoal.toStringAsFixed(0)} kcal",
-                            valueColor: stat.differenceFromGoal > 0 ? Colors.orange.shade700 : Colors.green.shade700),
-                        _statRow("Theoretical Change:", "${stat.theoreticalGainLoss.toStringAsFixed(2)} lbs",
-                            valueColor: stat.theoreticalGainLoss >= 0 ? Colors.orange.shade700 : Colors.green.shade700),
-                      ],
-                    ),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_formatDate(stat.date), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      const Divider(height: 16),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              _statRow("Calories In:", "${stat.caloriesIn.toInt()} kcal"),
+                              _statRow("Calories Out:", "${totalCaloriesOut.toInt()} kcal"),
+                              const SizedBox(height: 8),
+                              _statRow("Net vs Goal:", "${stat.differenceFromGoal.toStringAsFixed(0)} kcal",
+                                  valueColor: stat.differenceFromGoal > 0 ? Colors.orange.shade700 : Colors.green.shade700),
+                              _statRow("Theoretical Change:", "${stat.theoreticalGainLoss.toStringAsFixed(2)} lbs",
+                                  valueColor: stat.theoreticalGainLoss >= 0 ? Colors.orange.shade700 : Colors.green.shade700),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        // --- THIS IS THE FIX ---
+                        child: TextButton(
+                          onPressed: () => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
+                          child: const Text("Details"),
+                        ),
+                      )
+                    ],
                   ),
                 ),
               );
@@ -182,8 +247,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
       ),
     );
   }
-
-  // --- EXISTING WIDGETS (No changes below this line) ---
 
   Widget _buildNetCalorieChartSection(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final calorieTarget = profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget;
@@ -410,7 +473,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  // --- LEGENDS ---
   Widget _buildConsumedBurnedLegend() {
     return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
       _legendItem(Colors.orange, "Consumed"),
@@ -453,7 +515,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
     ]);
   }
 
-  // --- DATA HELPERS ---
   List<_DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<DateTime, _DailyStat> dailyStatsMap = {};
     const caloriesPerPound = 3500.0;
@@ -466,7 +527,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       dailyStatsMap[date] = _DailyStat(
           date: date,
           caloriesIn: 0.0,
-          caloriesOut: 0.0, // This is just activity burn
+          caloriesOut: 0.0,
           differenceFromGoal: 0.0,
           theoreticalGainLoss: 0.0);
     }
@@ -497,7 +558,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
       }
     }
 
-    // Final calculation pass
     dailyStatsMap.forEach((date, stat) {
       final netCalorieIntake = stat.caloriesIn - (baseBurn + stat.caloriesOut);
       dailyStatsMap[date] = _DailyStat(
@@ -509,8 +569,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
       );
     });
 
-
-    // Sort by date descending
     var sortedStats = dailyStatsMap.values.toList();
     sortedStats.sort((a,b) => b.date.compareTo(a.date));
     return sortedStats;
@@ -615,7 +673,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }).toList();
 
     final List<FlSpot> theoreticalSpots = [];
-    final dailyCalorieTarget = profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget;
+    final baseBurn = profile.recommendedDailyIntake;
     const caloriesPerPound = 3500.0;
 
     final Map<DateTime, double> dailyNetCalories = {};
@@ -635,12 +693,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final logDate = DateTime(weightLogs[i].date.year, weightLogs[i].date.month, weightLogs[i].date.day);
 
       int daysSinceLastLog = logDate.difference(lastDate).inDays;
-      for (int j = 0; j < daysSinceLastLog; j++) {
-        final date = lastDate.add(Duration(days: j));
-        final netCalories = dailyNetCalories[date] ?? 0.0;
-        final calorieDifference = netCalories - dailyCalorieTarget;
-        final weightChange = calorieDifference / caloriesPerPound;
-        currentTheoreticalWeight += weightChange;
+      if (daysSinceLastLog > 0) {
+        for (int j = 0; j < daysSinceLastLog; j++) {
+          final date = lastDate.add(Duration(days: j));
+          final loggedNetCalories = dailyNetCalories[date] ?? 0.0;
+          final calorieDifference = loggedNetCalories - baseBurn;
+          final weightChange = calorieDifference / caloriesPerPound;
+          currentTheoreticalWeight += weightChange;
+        }
       }
 
       theoreticalSpots.add(FlSpot(i.toDouble(), currentTheoreticalWeight));

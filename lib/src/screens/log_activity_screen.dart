@@ -14,7 +14,8 @@ class LogActivityScreen extends StatefulWidget {
 class _LogActivityScreenState extends State<LogActivityScreen> {
   final _firebaseService = FirebaseService();
 
-  Future<void> _showAddActivityDialog({ActivityLog? activityLog}) async {
+  // Dialog to add or edit an activity log
+  Future<void> _showAddEditActivityDialog({ActivityLog? activityLog}) async {
     final nameController = TextEditingController(text: activityLog?.name);
     final caloriesController = TextEditingController(text: activityLog?.caloriesBurned.toString());
     final formKey = GlobalKey<FormState>();
@@ -23,7 +24,7 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text(activityLog == null ? 'Add Activity Entry' : 'Log Frequent Activity'),
+          title: Text(activityLog == null ? 'Add Activity Entry' : 'Edit Activity Entry'),
           content: Form(
             key: formKey,
             child: Column(
@@ -53,13 +54,17 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
               child: const Text('Save'),
               onPressed: () {
                 if (formKey.currentState!.validate()) {
-                  final newLog = ActivityLog(
-                    id: '', // Firestore generates ID
+                  final logToSave = ActivityLog(
+                    id: activityLog?.id ?? '',
                     name: nameController.text,
                     caloriesBurned: int.parse(caloriesController.text),
-                    date: DateTime.now(),
+                    date: activityLog?.date ?? DateTime.now(),
                   );
-                  _firebaseService.addActivityLog(newLog);
+                  if (activityLog != null) {
+                    _firebaseService.updateActivityLog(logToSave);
+                  } else {
+                    _firebaseService.addActivityLog(logToSave);
+                  }
                   Navigator.of(context).pop();
                 }
               },
@@ -68,6 +73,34 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
         );
       },
     );
+  }
+
+  // Dialog to choose between editing or deleting
+  Future<void> _showEditDeleteDialog(ActivityLog log) async {
+    showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(log.name),
+            content: const Text("Would you like to edit or delete this item?"),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _showAddEditActivityDialog(activityLog: log);
+                },
+                child: const Text("Edit"),
+              ),
+              TextButton(
+                onPressed: () {
+                  _firebaseService.deleteActivityLog(log.id);
+                  Navigator.of(context).pop();
+                },
+                child: const Text("Delete", style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          );
+        });
   }
 
   // The dropdown menu for frequent activities
@@ -95,13 +128,17 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
         return PopupMenuButton<ActivityLog>(
           offset: const Offset(0, -120),
           onSelected: (ActivityLog activityLog) {
-            _showAddActivityDialog(activityLog: activityLog);
+            _firebaseService.addActivityLog(ActivityLog(
+                id: '',
+                name: activityLog.name,
+                caloriesBurned: activityLog.caloriesBurned,
+                date: DateTime.now()
+            ));
           },
           itemBuilder: (BuildContext context) {
             return frequentLogs.map((ActivityLog log) {
               return PopupMenuItem<ActivityLog>(
                 value: log,
-                // --- THIS IS THE CHANGE ---
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -183,6 +220,8 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
                       title: Text(log.name),
                       trailing: Text('-${log.caloriesBurned} kcal',
                           style: TextStyle(color: Colors.green.shade700)),
+                      // Add the long-press gesture here
+                      onLongPress: () => _showEditDeleteDialog(log),
                     );
                   },
                 ),
@@ -192,7 +231,7 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddActivityDialog(),
+        onPressed: () => _showAddEditActivityDialog(),
         tooltip: 'Add Activity',
         child: const Icon(Icons.fitness_center),
       ),
