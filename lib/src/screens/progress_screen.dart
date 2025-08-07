@@ -160,6 +160,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       DailyStatsCarousel(
                         dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
                         userProfile: userProfile,
+                        userGoal: userGoal,
                         onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
                       ),
                       const SizedBox(height: 24),

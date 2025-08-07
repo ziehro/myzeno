@@ -25,8 +25,47 @@ class WeightChartSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final actualSpots = chartData['actual']!;
+    final actualSpots = chartData['actual'] ?? const <FlSpot>[];
+    final theoreticalSpots = chartData['theoretical'] ?? const <FlSpot>[];
+
+    // Width like your other charts
     final chartWidth = max(MediaQuery.of(context).size.width - 64, actualSpots.length * 50.0);
+
+    // ---- Unified Y scale across both series ----
+    double minYData = double.infinity;
+    double maxYData = -double.infinity;
+
+    void _scan(List<FlSpot> spots) {
+      for (final s in spots) {
+        if (s.y < minYData) minYData = s.y;
+        if (s.y > maxYData) maxYData = s.y;
+      }
+    }
+
+    _scan(actualSpots);
+    _scan(theoreticalSpots);
+
+    if (!minYData.isFinite || !maxYData.isFinite) {
+      // Fallback if no data
+      minYData = 0;
+      maxYData = 1;
+    }
+
+    // Add headroom (5%) and pick a nice step; round min/max to step
+    final range = (maxYData - minYData).abs();
+    final step = _niceWeightStep(range);
+    final paddedMin = minYData - range * 0.05;
+    final paddedMax = maxYData + range * 0.05;
+
+    final minY = (paddedMin / step).floor() * step;
+    final maxY = (paddedMax / step).ceil() * step;
+
+    // Start scrolled to the right after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scrollController.hasClients) {
+        scrollController.jumpTo(scrollController.position.maxScrollExtent);
+      }
+    });
 
     return Card(
       elevation: 4,
@@ -42,20 +81,25 @@ class WeightChartSection extends StatelessWidget {
               controller: scrollController,
               scrollDirection: Axis.horizontal,
               child: SizedBox(
-                height: 200,
+                height: 220,
                 width: chartWidth,
                 child: LineChart(
                   LineChartData(
+                    minY: minY,
+                    maxY: maxY,
                     lineBarsData: [
                       LineChartBarData(
                         spots: actualSpots,
                         isCurved: true,
                         color: Theme.of(context).colorScheme.primary,
                         barWidth: 4,
-                        belowBarData: BarAreaData(show: true, color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                        ),
                       ),
                       LineChartBarData(
-                        spots: chartData['theoretical']!,
+                        spots: theoreticalSpots,
                         isCurved: true,
                         color: Colors.grey,
                         barWidth: 3,
@@ -64,12 +108,31 @@ class WeightChartSection extends StatelessWidget {
                       ),
                     ],
                     titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
+                      // Left axis off; use a single graduated right axis
+                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 48,
+                          interval: step,
+                          getTitlesWidget: (value, meta) => SizedBox(
+                            width: 48,
+                            child: Text(
+                              NumberFormat.decimalPattern().format(value),
+                              textAlign: TextAlign.center, // centered
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ),
+                      ),
                       topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
-                    gridData: FlGridData(show: true, drawVerticalLine: false),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: step,
+                    ),
                     borderData: FlBorderData(show: false),
                   ),
                 ),
@@ -87,6 +150,15 @@ class WeightChartSection extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // Choose a pleasant tick interval for weight ranges
+  double _niceWeightStep(double range) {
+    if (range <= 10) return 1;
+    if (range <= 25) return 2.5;
+    if (range <= 60) return 5;
+    if (range <= 120) return 10;
+    return 20;
   }
 
   Widget _buildWeightHistoryList() {
