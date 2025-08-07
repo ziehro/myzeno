@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
 
 class LogFoodScreen extends StatefulWidget {
   const LogFoodScreen({super.key});
@@ -14,7 +15,6 @@ class LogFoodScreen extends StatefulWidget {
 class _LogFoodScreenState extends State<LogFoodScreen> {
   final _firebaseService = FirebaseService();
 
-  // Dialog to add or edit a food log
   Future<void> _showAddEditFoodDialog({FoodLog? foodLog}) async {
     final nameController = TextEditingController(text: foodLog?.name);
     final caloriesController = TextEditingController(text: foodLog?.calories.toString());
@@ -55,11 +55,9 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
               onPressed: () {
                 if (formKey.currentState!.validate()) {
                   final logToSave = FoodLog(
-                    // Use existing ID if editing, otherwise Firestore generates it
                     id: foodLog?.id ?? '',
                     name: nameController.text,
                     calories: int.parse(caloriesController.text),
-                    // Use existing date if editing, otherwise use now
                     date: foodLog?.date ?? DateTime.now(),
                   );
 
@@ -78,36 +76,34 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
     );
   }
 
-  // Dialog to choose between editing or deleting
   Future<void> _showEditDeleteDialog(FoodLog log) async {
     showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: Text(log.name),
-            content: const Text("Would you like to edit or delete this item?"),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  _showAddEditFoodDialog(foodLog: log);
-                },
-                child: const Text("Edit"),
-              ),
-              TextButton(
-                onPressed: () {
-                  _firebaseService.deleteFoodLog(log.id);
-                  Navigator.of(context).pop();
-                },
-                child: const Text("Delete", style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          );
-        });
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(log.name),
+          content: const Text("Would you like to edit or delete this item?"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showAddEditFoodDialog(foodLog: log);
+              },
+              child: const Text("Edit"),
+            ),
+            TextButton(
+              onPressed: () {
+                _firebaseService.deleteFoodLog(log.id);
+                Navigator.of(context).pop();
+              },
+              child: const Text("Delete", style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
-
-  // The dropdown menu for frequent foods
   Widget _buildFrequentFoodMenu() {
     return StreamBuilder<List<FoodLog>>(
       stream: _firebaseService.frequentFoodLogStream,
@@ -120,10 +116,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
               children: <Widget>[
                 Icon(Icons.star, color: Theme.of(context).disabledColor),
                 const SizedBox(width: 8),
-                Text(
-                  "From Favorites",
-                  style: TextStyle(color: Theme.of(context).disabledColor),
-                ),
+                Text("From Favorites", style: TextStyle(color: Theme.of(context).disabledColor)),
               ],
             ),
           );
@@ -132,12 +125,11 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
         return PopupMenuButton<FoodLog>(
           offset: const Offset(0, -120),
           onSelected: (FoodLog foodLog) {
-            // Re-logging a favorite creates a new entry
             _firebaseService.addFoodLog(FoodLog(
-                id: '',
-                name: foodLog.name,
-                calories: foodLog.calories,
-                date: DateTime.now()
+              id: '',
+              name: foodLog.name,
+              calories: foodLog.calories,
+              date: DateTime.now(),
             ));
           },
           itemBuilder: (BuildContext context) {
@@ -148,13 +140,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(log.name),
-                    Text(
-                      '${log.calories} kcal',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 14,
-                      ),
-                    ),
+                    Text('${log.calories} kcal', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                   ],
                 ),
               );
@@ -181,6 +167,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Today\'s Log (${DateFormat.yMMMd().format(DateTime.now())})'),
+        actions: const [AppMenuButton()], // <-- added
       ),
       body: StreamBuilder<List<FoodLog>>(
         stream: _firebaseService.foodLogStream,
@@ -194,12 +181,10 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
 
           final allLogs = snapshot.data!;
           final today = DateTime.now();
-          final todaysLogs = allLogs
-              .where((log) =>
+          final todaysLogs = allLogs.where((log) =>
           log.date.year == today.year &&
               log.date.month == today.month &&
-              log.date.day == today.day)
-              .toList();
+              log.date.day == today.day).toList();
 
           if (todaysLogs.isEmpty) {
             return const Center(child: Text('No food logged yet today.'));
@@ -211,10 +196,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: Text(
-                  'Total: $totalCalories kcal',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
+                child: Text('Total: $totalCalories kcal', style: Theme.of(context).textTheme.headlineSmall),
               ),
               Expanded(
                 child: ListView.builder(
@@ -224,7 +206,6 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                     return ListTile(
                       title: Text(log.name),
                       trailing: Text('${log.calories} kcal'),
-                      // Add the long-press gesture here
                       onLongPress: () => _showEditDeleteDialog(log),
                     );
                   },

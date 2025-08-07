@@ -11,6 +11,7 @@ import 'package:zeno/src/screens/log_food_screen.dart';
 import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 import 'package:zeno/src/screens/tips_screen.dart';
+import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -92,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- NEW METHOD: Confirmation Dialog for Signing Out ---
+  // Confirmation Dialog for Signing Out
   Future<void> _showSignOutConfirmationDialog() async {
     return showDialog<void>(
       context: context,
@@ -103,21 +104,29 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: <Widget>[
             TextButton(
               child: const Text('Cancel'),
-              onPressed: () {
-                Navigator.of(context).pop(); // Closes the dialog
-              },
+              onPressed: () => Navigator.of(context).pop(),
             ),
             TextButton(
               child: const Text('Sign Out'),
               onPressed: () {
-                Navigator.of(context).pop(); // Close the dialog
-                _firebaseService.signOut();  // Perform the sign out
+                Navigator.of(context).pop();
+                _firebaseService.signOut();
               },
             ),
           ],
         );
       },
     );
+  }
+
+  // Used by the menu item to keep previous behavior
+  void _handleEditProfileAndGoal() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (context) => GoalSettingScreen(
+        userProfile: _userProfile,
+        userGoal: _userGoal,
+      ),
+    )).then((_) => _loadInitialData());
   }
 
   @override
@@ -145,30 +154,9 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('MyZeno'),
         actions: [
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const ProgressScreen()));
-            },
-            icon: const Icon(Icons.timeline),
-            tooltip: 'View Progress',
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (context) => GoalSettingScreen(
-                  userProfile: _userProfile,
-                  userGoal: _userGoal,
-                ),
-              )).then((_) => _loadInitialData());
-            },
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Edit Profile & Goal',
-          ),
-          IconButton(
-            // --- UPDATED to call the new dialog method ---
-            onPressed: _showSignOutConfirmationDialog,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign Out',
+          AppMenuButton(
+            onEditProfileAndGoal: _handleEditProfileAndGoal,
+            onSignOut: _showSignOutConfirmationDialog,
           ),
         ],
       ),
@@ -267,7 +255,6 @@ class _HomeScreenState extends State<HomeScreen> {
       stream: _firebaseService.weightLogStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // Show a placeholder while loading to prevent layout shifts
           return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
         }
 
@@ -297,8 +284,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 Center(
                   child: ElevatedButton(
-                      onPressed: _showLogWeightDialog,
-                      child: const Text("Log Today's Weight")),
+                    onPressed: _showLogWeightDialog,
+                    child: const Text("Log Today's Weight"),
+                  ),
                 )
               ],
             ),

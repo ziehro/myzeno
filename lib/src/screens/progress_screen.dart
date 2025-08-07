@@ -1,4 +1,3 @@
-// lib/src/screens/progress_screen.dart
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +13,7 @@ import 'widgets/daily_stats_carousel.dart';
 import 'widgets/net_calorie_chart_section.dart';
 import 'widgets/weight_chart_section.dart';
 import 'widgets/calorie_chart_section.dart';
+import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -49,7 +49,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'profile': profile, 'goal': goal};
   }
 
-  // --- Helper: normalize any DateTime to LOCAL midnight (prevents UTC vs local drift)
   DateTime _asLocalDate(DateTime dt) {
     final l = dt.toLocal();
     return DateTime(l.year, l.month, l.day);
@@ -113,6 +112,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Progress'),
+        actions: const [AppMenuButton()], // <-- added
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _userDataFuture,
@@ -141,7 +141,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
                   final foodLogs = (foodSnapshot.data ?? []).toList();
                   final activityLogs = (activitySnapshot.data ?? []).toList();
 
-                  // Auto-scroll to end after layout
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (_netCalorieScrollController.hasClients) {
                       _netCalorieScrollController.jumpTo(_netCalorieScrollController.position.maxScrollExtent);
@@ -210,7 +209,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+  // ------- helpers (unchanged from your version) -------
+  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) { /* ... same as yours ... */
     final Map<DateTime, DailyStat> dailyStatsMap = {};
     const caloriesPerPound = 3500.0;
     final dailyCalorieTarget = (profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget).toDouble();
@@ -275,7 +275,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return sortedStats;
   }
 
-  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDateRaw) {
+  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDateRaw) { /* ... same as yours ... */
     final Map<int, double> dailyNet = {};
     final List<DateTime> dates = [];
     double maxNetValue = 0.0;
@@ -331,7 +331,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'barGroups': barGroups, 'maxNetValue': maxNetValue, 'dates': dates};
   }
 
-  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) { /* ... same as yours ... */
     final Map<int, double> dailyConsumed = {};
     final Map<int, double> dailyBurned = {};
     final List<DateTime> dates = [];
@@ -340,7 +340,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
       return {'barGroups': [], 'dates': []};
     }
 
-    // Find earliest LOCAL date across logs
     DateTime firstDate = _asLocalDate(DateTime.now());
     if (foodLogs.isNotEmpty) {
       firstDate = foodLogs
@@ -412,7 +411,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       List<WeightLog> weightLogs,
       List<FoodLog> foodLogs,
       List<ActivityLog> activityLogs,
-      ) {
+      ) { /* ... same as yours ... */
     if (weightLogs.isEmpty) return {'actual': [], 'theoretical': []};
 
     weightLogs.sort((a, b) => a.date.compareTo(b.date));
