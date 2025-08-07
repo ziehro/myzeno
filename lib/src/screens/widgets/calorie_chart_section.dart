@@ -19,25 +19,54 @@ class CalorieChartSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final barGroups = chartData['barGroups'] as List<BarChartGroupData>;
-    // Account for Card padding (16 + 16) and frozen Y-axis width (48)
-    final innerViewportMinWidth =
-        MediaQuery.of(context).size.width - 64 - 48; // <- important
-    final chartWidth = max(innerViewportMinWidth, barGroups.length * 50.0);
+    final dates = chartData['dates'] as List<DateTime>? ?? const <DateTime>[];
 
-    // Determine max Y from both bars (consumed & burned), add headroom, round to nice step.
-    double maxY = 0;
+    if (barGroups.isEmpty) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Padding(
+          padding: EdgeInsets.fromLTRB(16, 20, 16, 16),
+          child: Center(
+            heightFactor: 5,
+            child: Text("No data for the last 7 days."),
+          ),
+        ),
+      );
+    }
+
+    // ---- Y-range: start at zero; find max across both series and add headroom ----
+    double maxYData = 0;
     for (var group in barGroups) {
       for (var rod in group.barRods) {
-        if (rod.toY > maxY) maxY = rod.toY;
+        if (rod.toY > maxYData) maxYData = rod.toY;
       }
     }
-    maxY *= 1.2;
-    // Round to a nice step (nearest 500 or 1000 depending on scale)
-    final step = maxY >= 4000 ? 1000 : 500;
-    maxY = ((maxY / step).ceil() * step).toDouble();
+    final maxYPadded = maxYData * 1.2;
+    final step = _niceStep(maxYPadded);
+    final maxY = (max(maxYPadded, step) / step).ceil() * step;
+    const minY = 0.0;
 
-    const divisions = 4;
-    final interval = maxY / divisions;
+    // ---- Layout sizing (keep bottom labels clear of legend) ----
+    final size = MediaQuery.of(context).size;
+    final textScale = MediaQuery.textScaleFactorOf(context);
+    final bottomReserved = (52.0 * textScale).clamp(52.0, 80.0);
+    final chartHeight = 200.0 + bottomReserved;
+
+    // A touch of right padding so the last date label isn't flush with edge
+    const extraRightPadding = 12.0;
+    final innerViewportMinWidth = size.width - 64; // card padding L+R
+    final chartWidth = max(
+      innerViewportMinWidth,
+      barGroups.length * 50.0 + extraRightPadding,
+    );
+
+    // --- Start scrolled to the right after first frame ---
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scrollController.hasClients) {
+        scrollController.jumpTo(scrollController.position.maxScrollExtent);
+      }
+    });
 
     return Card(
       elevation: 4,
@@ -55,74 +84,71 @@ class CalorieChartSection extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
-            barGroups.isEmpty
-                ? const Center(
-                heightFactor: 5, child: Text("No data for the last 7 days."))
-                : Row(
-              children: [
-                // --- FROZEN Y-AXIS LABELS (do not scroll) ---
-                SizedBox(
-                  width: 48,
-                  height: 240,
-                  child: _YAxis(
+            SingleChildScrollView(
+              controller: scrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                height: chartHeight,
+                width: chartWidth,
+                child: BarChart(
+                  BarChartData(
+                    minY: minY,
                     maxY: maxY,
-                    divisions: divisions,
-                  ),
-                ),
-
-                // --- SCROLLABLE CHART AREA ---
-                Expanded(
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      height: 240,
-                      width: chartWidth,
-                      child: BarChart(
-                        BarChartData(
-                          maxY: maxY,
-                          barGroups: barGroups,
-                          titlesData: FlTitlesData(
-                            bottomTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: true,
-                                getTitlesWidget: (value, meta) {
-                                  final date =
-                                  chartData['dates'][value.toInt()];
-                                  return SideTitleWidget(
-                                    axisSide: meta.axisSide,
-                                    child: Text(DateFormat('MMM\ndd')
-                                        .format(date)),
-                                  );
-                                },
-                                reservedSize: 36,
+                    barGroups: barGroups,
+                    titlesData: FlTitlesData(
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 48,
+                          interval: step,
+                          getTitlesWidget: (value, meta) => SizedBox(
+                            width: 48,
+                            child: Text(
+                              NumberFormat.decimalPattern().format(value.toInt()),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ),
+                      ),
+                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: bottomReserved,
+                          interval: 1,
+                          getTitlesWidget: (value, meta) {
+                            final idx = value.toInt();
+                            if (idx < 0 || idx >= dates.length) {
+                              return const SizedBox.shrink();
+                            }
+                            final date = dates[idx];
+                            return SideTitleWidget(
+                              axisSide: meta.axisSide,
+                              space: 8,
+                              child: Text(
+                                DateFormat('MMM\ndd').format(date),
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
                               ),
-                            ),
-                            // Hide chart's own left titles so only frozen labels show
-                            leftTitles: AxisTitles(
-                              sideTitles:
-                              SideTitles(showTitles: false),
-                            ),
-                            topTitles: AxisTitles(
-                                sideTitles:
-                                SideTitles(showTitles: false)),
-                            rightTitles: AxisTitles(
-                                sideTitles:
-                                SideTitles(showTitles: false)),
-                          ),
-                          gridData: FlGridData(
-                            show: true,
-                            drawVerticalLine: false,
-                            horizontalInterval: interval,
-                          ),
-                          borderData: FlBorderData(show: false),
-                          barTouchData: BarTouchData(enabled: true),
+                            );
+                          },
                         ),
                       ),
                     ),
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: step,
+                    ),
+                    borderData: FlBorderData(show: false),
+                    barTouchData: BarTouchData(enabled: true),
                   ),
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: 16),
             const Row(
@@ -138,40 +164,11 @@ class CalorieChartSection extends StatelessWidget {
       ),
     );
   }
-}
 
-class _YAxis extends StatelessWidget {
-  final double maxY;
-  final int divisions;
-  const _YAxis({required this.maxY, this.divisions = 4});
-
-  @override
-  Widget build(BuildContext context) {
-    // Generate tick labels from max down to 0
-    final ticks = List<double>.generate(
-      divisions + 1,
-          (i) => maxY - (maxY / divisions) * i,
-    );
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: ticks
-          .map(
-            (t) => Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            _formatNumber(t),
-            textAlign: TextAlign.right,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      )
-          .toList(),
-    );
-  }
-
-  String _formatNumber(double v) {
-    // 1000 -> 1,000
-    return NumberFormat.compact().format(v.round());
+  double _niceStep(double maxY) {
+    if (maxY <= 1500) return 250;
+    if (maxY <= 4000) return 500;
+    if (maxY <= 8000) return 1000;
+    return 2000;
   }
 }

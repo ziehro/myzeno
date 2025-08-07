@@ -49,10 +49,16 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'profile': profile, 'goal': goal};
   }
 
+  // --- Helper: normalize any DateTime to LOCAL midnight (prevents UTC vs local drift)
+  DateTime _asLocalDate(DateTime dt) {
+    final l = dt.toLocal();
+    return DateTime(l.year, l.month, l.day);
+  }
+
   Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
-    final day = stat.date;
-    final foodForDay = allFood.where((log) => log.date.year == day.year && log.date.month == day.month && log.date.day == day.day).toList();
-    final activitiesForDay = allActivities.where((log) => log.date.year == day.year && log.date.month == day.month && log.date.day == day.day).toList();
+    final day = _asLocalDate(stat.date);
+    final foodForDay = allFood.where((log) => _asLocalDate(log.date) == day).toList();
+    final activitiesForDay = allActivities.where((log) => _asLocalDate(log.date) == day).toList();
 
     return showDialog(
       context: context,
@@ -122,73 +128,82 @@ class _ProgressScreenState extends State<ProgressScreen> {
           final UserGoal userGoal = snapshot.data!['goal'];
 
           return StreamBuilder<List<FoodLog>>(
-              stream: _firebaseService.foodLogStream,
-              builder: (context, foodSnapshot) {
-                return StreamBuilder<List<ActivityLog>>(
-                    stream: _firebaseService.activityLogStream,
-                    builder: (context, activitySnapshot) {
-                      if (foodSnapshot.connectionState == ConnectionState.waiting ||
-                          activitySnapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      final foodLogs = foodSnapshot.data ?? [];
-                      final activityLogs = activitySnapshot.data ?? [];
+            stream: _firebaseService.foodLogStream,
+            builder: (context, foodSnapshot) {
+              return StreamBuilder<List<ActivityLog>>(
+                stream: _firebaseService.activityLogStream,
+                builder: (context, activitySnapshot) {
+                  if (foodSnapshot.connectionState == ConnectionState.waiting ||
+                      activitySnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_netCalorieScrollController.hasClients) {
-                          _netCalorieScrollController.jumpTo(_netCalorieScrollController.position.maxScrollExtent);
-                        }
-                        if (_weightChartScrollController.hasClients) {
-                          _weightChartScrollController.jumpTo(_weightChartScrollController.position.maxScrollExtent);
-                        }
-                        if (_calorieChartScrollController.hasClients) {
-                          _calorieChartScrollController.jumpTo(_calorieChartScrollController.position.maxScrollExtent);
-                        }
-                      });
+                  final foodLogs = (foodSnapshot.data ?? []).toList();
+                  final activityLogs = (activitySnapshot.data ?? []).toList();
 
-                      return ListView(
-                        padding: const EdgeInsets.all(16.0),
-                        children: [
-                          DailyStatsCarousel(
-                            dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
-                            userProfile: userProfile,
-                            onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
-                          ),
-                          const SizedBox(height: 24),
-                          NetCalorieChartSection(
+                  // Auto-scroll to end after layout
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (_netCalorieScrollController.hasClients) {
+                      _netCalorieScrollController.jumpTo(_netCalorieScrollController.position.maxScrollExtent);
+                    }
+                    if (_weightChartScrollController.hasClients) {
+                      _weightChartScrollController.jumpTo(_weightChartScrollController.position.maxScrollExtent);
+                    }
+                    if (_calorieChartScrollController.hasClients) {
+                      _calorieChartScrollController.jumpTo(_calorieChartScrollController.position.maxScrollExtent);
+                    }
+                  });
+
+                  return ListView(
+                    padding: const EdgeInsets.all(16.0),
+                    children: [
+                      DailyStatsCarousel(
+                        dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
+                        userProfile: userProfile,
+                        onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
+                      ),
+                      const SizedBox(height: 24),
+                      NetCalorieChartSection(
+                        profile: userProfile,
+                        goal: userGoal,
+                        chartData: _prepareNetCalorieBarData(
+                          foodLogs,
+                          activityLogs,
+                          userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
+                          userProfile.createdAt,
+                        ),
+                        scrollController: _netCalorieScrollController,
+                      ),
+                      const SizedBox(height: 24),
+                      StreamBuilder<List<WeightLog>>(
+                        stream: _firebaseService.weightLogStream,
+                        builder: (context, weightSnapshot) {
+                          if (weightSnapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          final weightLogs = weightSnapshot.data ?? [];
+                          if (weightLogs.length < 2) {
+                            return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
+                          }
+                          return WeightChartSection(
                             profile: userProfile,
                             goal: userGoal,
-                            chartData: _prepareNetCalorieBarData(foodLogs, activityLogs, userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget, userProfile.createdAt),
-                            scrollController: _netCalorieScrollController,
-                          ),
-                          const SizedBox(height: 24),
-                          StreamBuilder<List<WeightLog>>(
-                              stream: _firebaseService.weightLogStream,
-                              builder: (context, weightSnapshot) {
-                                if (weightSnapshot.connectionState == ConnectionState.waiting) {
-                                  return const Center(child: CircularProgressIndicator());
-                                }
-                                final weightLogs = weightSnapshot.data ?? [];
-                                if (weightLogs.length < 2) {
-                                  return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
-                                }
-                                return WeightChartSection(
-                                  profile: userProfile,
-                                  goal: userGoal,
-                                  chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
-                                  scrollController: _weightChartScrollController,
-                                );
-                              }
-                          ),
-                          const SizedBox(height: 24),
-                          CalorieChartSection(
-                            chartData: _prepareCalorieBarData(foodLogs, activityLogs),
-                            scrollController: _calorieChartScrollController,
-                          ),
-                        ],
-                      );
-                    });
-              });
+                            chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
+                            scrollController: _weightChartScrollController,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      CalorieChartSection(
+                        chartData: _prepareCalorieBarData(foodLogs, activityLogs),
+                        scrollController: _calorieChartScrollController,
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          );
         },
       ),
     );
@@ -200,42 +215,45 @@ class _ProgressScreenState extends State<ProgressScreen> {
     final dailyCalorieTarget = (profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget).toDouble();
     final baseBurn = profile.recommendedDailyIntake.toDouble();
 
-    final startDate = profile.createdAt;
-    final today = DateTime.now();
+    final startDate = _asLocalDate(profile.createdAt);
+    final today = _asLocalDate(DateTime.now());
     final daysSinceStart = today.difference(startDate).inDays;
 
     for (int i = 0; i <= daysSinceStart; i++) {
-      final date = DateTime(startDate.year, startDate.month, startDate.day).add(Duration(days: i));
+      final date = startDate.add(Duration(days: i));
       dailyStatsMap[date] = DailyStat(
-          date: date,
-          caloriesIn: 0.0,
-          caloriesOut: 0.0,
-          differenceFromGoal: 0.0,
-          theoreticalGainLoss: 0.0);
+        date: date,
+        caloriesIn: 0.0,
+        caloriesOut: 0.0,
+        differenceFromGoal: 0.0,
+        theoreticalGainLoss: 0.0,
+      );
     }
 
     for (final log in foodLogs) {
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
+      final day = _asLocalDate(log.date);
       if (dailyStatsMap.containsKey(day)) {
-        final currentStat = dailyStatsMap[day]!;
+        final current = dailyStatsMap[day]!;
         dailyStatsMap[day] = DailyStat(
-            date: day,
-            caloriesIn: currentStat.caloriesIn + log.calories,
-            caloriesOut: currentStat.caloriesOut,
-            differenceFromGoal: 0, theoreticalGainLoss: 0
+          date: day,
+          caloriesIn: current.caloriesIn + log.calories,
+          caloriesOut: current.caloriesOut,
+          differenceFromGoal: 0,
+          theoreticalGainLoss: 0,
         );
       }
     }
 
     for (final log in activityLogs) {
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
+      final day = _asLocalDate(log.date);
       if (dailyStatsMap.containsKey(day)) {
-        final currentStat = dailyStatsMap[day]!;
+        final current = dailyStatsMap[day]!;
         dailyStatsMap[day] = DailyStat(
-            date: day,
-            caloriesIn: currentStat.caloriesIn,
-            caloriesOut: currentStat.caloriesOut + log.caloriesBurned,
-            differenceFromGoal: 0, theoreticalGainLoss: 0
+          date: day,
+          caloriesIn: current.caloriesIn,
+          caloriesOut: current.caloriesOut + log.caloriesBurned,
+          differenceFromGoal: 0,
+          theoreticalGainLoss: 0,
         );
       }
     }
@@ -252,42 +270,44 @@ class _ProgressScreenState extends State<ProgressScreen> {
     });
 
     var sortedStats = dailyStatsMap.values.toList();
-    sortedStats.sort((a,b) => a.date.compareTo(b.date));
+    sortedStats.sort((a, b) => a.date.compareTo(b.date));
     return sortedStats;
   }
 
-  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDate) {
+  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDateRaw) {
     final Map<int, double> dailyNet = {};
-    List<DateTime> dates = [];
+    final List<DateTime> dates = [];
     double maxNetValue = 0.0;
 
-    final today = DateTime.now();
+    final startDate = _asLocalDate(startDateRaw);
+    final today = _asLocalDate(DateTime.now());
     final daysSinceStart = today.difference(startDate).inDays;
 
-
     for (int i = 0; i <= daysSinceStart; i++) {
-      final day = DateTime(startDate.year, startDate.month, startDate.day).add(Duration(days: i));
+      final day = startDate.add(Duration(days: i));
       dailyNet[day.millisecondsSinceEpoch] = 0.0;
       dates.add(day);
     }
 
     for (final log in foodLogs) {
-      final dayKey = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
-      if (dailyNet.containsKey(dayKey)) {
-        dailyNet[dayKey] = dailyNet[dayKey]! + log.calories;
+      final d = _asLocalDate(log.date);
+      final key = d.millisecondsSinceEpoch;
+      if (dailyNet.containsKey(key)) {
+        dailyNet[key] = dailyNet[key]! + log.calories;
       }
     }
 
     for (final log in activityLogs) {
-      final dayKey = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
-      if (dailyNet.containsKey(dayKey)) {
-        dailyNet[dayKey] = dailyNet[dayKey]! - log.caloriesBurned;
+      final d = _asLocalDate(log.date);
+      final key = d.millisecondsSinceEpoch;
+      if (dailyNet.containsKey(key)) {
+        dailyNet[key] = dailyNet[key]! - log.caloriesBurned;
       }
     }
 
     final barGroups = List.generate(dates.length, (index) {
-      final dayKey = dates[index].millisecondsSinceEpoch;
-      final netValue = dailyNet[dayKey] ?? 0.0;
+      final key = dates[index].millisecondsSinceEpoch;
+      final netValue = dailyNet[key] ?? 0.0;
       final isOverGoal = netValue > calorieTarget;
 
       if (netValue > maxNetValue) {
@@ -313,56 +333,71 @@ class _ProgressScreenState extends State<ProgressScreen> {
   Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<int, double> dailyConsumed = {};
     final Map<int, double> dailyBurned = {};
-    List<DateTime> dates = [];
+    final List<DateTime> dates = [];
 
-    if(foodLogs.isEmpty && activityLogs.isEmpty) return {'barGroups': [], 'dates': []};
-
-    DateTime firstDate = DateTime.now();
-
-    if(foodLogs.isNotEmpty){
-      firstDate = foodLogs.map((e) => e.date).reduce((a, b) => a.isBefore(b) ? a : b);
+    if (foodLogs.isEmpty && activityLogs.isEmpty) {
+      return {'barGroups': [], 'dates': []};
     }
 
-    if(activityLogs.isNotEmpty){
-      final firstActivityDate = activityLogs.map((e) => e.date).reduce((a, b) => a.isBefore(b) ? a : b);
-      if(firstActivityDate.isBefore(firstDate)){
+    // Find earliest LOCAL date across logs
+    DateTime firstDate = _asLocalDate(DateTime.now());
+    if (foodLogs.isNotEmpty) {
+      firstDate = foodLogs
+          .map((e) => _asLocalDate(e.date))
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+    }
+    if (activityLogs.isNotEmpty) {
+      final firstActivityDate = activityLogs
+          .map((e) => _asLocalDate(e.date))
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+      if (firstActivityDate.isBefore(firstDate)) {
         firstDate = firstActivityDate;
       }
     }
 
-
-    final today = DateTime.now();
+    final today = _asLocalDate(DateTime.now());
     final daysSinceStart = today.difference(firstDate).inDays;
 
-
     for (int i = 0; i <= daysSinceStart; i++) {
-      final day = DateTime(firstDate.year, firstDate.month, firstDate.day).add(Duration(days: i));
+      final day = firstDate.add(Duration(days: i));
       dailyConsumed[day.millisecondsSinceEpoch] = 0.0;
       dailyBurned[day.millisecondsSinceEpoch] = 0.0;
       dates.add(day);
     }
 
     for (final log in foodLogs) {
-      final dayKey = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
-      if (dailyConsumed.containsKey(dayKey)) {
-        dailyConsumed[dayKey] = dailyConsumed[dayKey]! + log.calories;
+      final d = _asLocalDate(log.date);
+      final key = d.millisecondsSinceEpoch;
+      if (dailyConsumed.containsKey(key)) {
+        dailyConsumed[key] = dailyConsumed[key]! + log.calories;
       }
     }
 
     for (final log in activityLogs) {
-      final dayKey = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
-      if (dailyBurned.containsKey(dayKey)) {
-        dailyBurned[dayKey] = dailyBurned[dayKey]! + log.caloriesBurned;
+      final d = _asLocalDate(log.date);
+      final key = d.millisecondsSinceEpoch;
+      if (dailyBurned.containsKey(key)) {
+        dailyBurned[key] = dailyBurned[key]! + log.caloriesBurned;
       }
     }
 
-    final barGroups =  List.generate(dates.length, (index) {
-      final dayKey = dates[index].millisecondsSinceEpoch;
+    final barGroups = List.generate(dates.length, (index) {
+      final key = dates[index].millisecondsSinceEpoch;
       return BarChartGroupData(
         x: index,
         barRods: [
-          BarChartRodData(toY: dailyConsumed[dayKey] ?? 0.0, color: Colors.orange, width: 8, borderRadius: BorderRadius.circular(2)),
-          BarChartRodData(toY: dailyBurned[dayKey] ?? 0.0, color: Colors.lightGreen, width: 8, borderRadius: BorderRadius.circular(2)),
+          BarChartRodData(
+            toY: dailyConsumed[key] ?? 0.0,
+            color: Colors.orange,
+            width: 8,
+            borderRadius: BorderRadius.circular(2),
+          ),
+          BarChartRodData(
+            toY: dailyBurned[key] ?? 0.0,
+            color: Colors.lightGreen,
+            width: 8,
+            borderRadius: BorderRadius.circular(2),
+          ),
         ],
       );
     });
@@ -370,7 +405,13 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'barGroups': barGroups, 'dates': dates};
   }
 
-  Map<String, List<FlSpot>> _prepareWeightTrendData(UserProfile profile, UserGoal goal, List<WeightLog> weightLogs, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+  Map<String, List<FlSpot>> _prepareWeightTrendData(
+      UserProfile profile,
+      UserGoal goal,
+      List<WeightLog> weightLogs,
+      List<FoodLog> foodLogs,
+      List<ActivityLog> activityLogs,
+      ) {
     if (weightLogs.isEmpty) return {'actual': [], 'theoretical': []};
 
     weightLogs.sort((a, b) => a.date.compareTo(b.date));
@@ -384,19 +425,19 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
     final Map<DateTime, double> dailyNetCalories = {};
     for (var log in foodLogs) {
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
+      final day = _asLocalDate(log.date);
       dailyNetCalories.update(day, (value) => value + log.calories, ifAbsent: () => log.calories.toDouble());
     }
     for (var log in activityLogs) {
-      final day = DateTime(log.date.year, log.date.month, log.date.day);
+      final day = _asLocalDate(log.date);
       dailyNetCalories.update(day, (value) => value - log.caloriesBurned, ifAbsent: () => -log.caloriesBurned.toDouble());
     }
 
     double currentTheoreticalWeight = profile.startWeight;
-    DateTime lastDate = profile.createdAt;
+    DateTime lastDate = _asLocalDate(profile.createdAt);
 
     for (int i = 0; i < weightLogs.length; i++) {
-      final logDate = DateTime(weightLogs[i].date.year, weightLogs[i].date.month, weightLogs[i].date.day);
+      final logDate = _asLocalDate(weightLogs[i].date);
 
       int daysSinceLastLog = logDate.difference(lastDate).inDays;
       if (daysSinceLastLog > 0) {
