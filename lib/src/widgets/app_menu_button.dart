@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:zeno/src/screens/progress_screen.dart';
-import 'package:zeno/src/screens/log_food_screen.dart';
-import 'package:zeno/src/screens/log_activity_screen.dart';
-import 'package:zeno/src/screens/tips_screen.dart';
-import 'package:zeno/src/screens/home_screen.dart';
-import '../../../main.dart'; // for ThemeController
+import 'package:zeno/src/screens/main_screen.dart';
+import '../../../main.dart'; // ThemeController
 
-/// A single overflow menu button to replace clusters of AppBar icons.
-/// Shows navigation shortcuts and a Dark Theme switch.
 class AppMenuButton extends StatelessWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onEditProfileAndGoal;
@@ -17,6 +11,12 @@ class AppMenuButton extends StatelessWidget {
     this.onSignOut,
     this.onEditProfileAndGoal,
   });
+
+  void _go(BuildContext context, int index) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => MainScreen(initialIndex: index),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,19 +30,19 @@ class AppMenuButton extends StatelessWidget {
       onSelected: (value) async {
         switch (value) {
           case _AppMenuAction.home:
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HomeScreen()));
+            _go(context, 0);
             break;
           case _AppMenuAction.progress:
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ProgressScreen()));
+            _go(context, 3);
             break;
           case _AppMenuAction.logFood:
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogFoodScreen()));
+            _go(context, 1);
             break;
           case _AppMenuAction.logActivity:
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LogActivityScreen()));
+            _go(context, 2);
             break;
           case _AppMenuAction.tips:
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TipsScreen()));
+            _go(context, 4);
             break;
           case _AppMenuAction.editProfileGoal:
             onEditProfileAndGoal?.call();
@@ -58,62 +58,49 @@ class AppMenuButton extends StatelessWidget {
             break;
         }
       },
-      itemBuilder: (context) => <PopupMenuEntry<_AppMenuAction>>[
-        const PopupMenuItem(
+      itemBuilder: (context) => const [
+        PopupMenuItem(
           value: _AppMenuAction.home,
           child: ListTile(leading: Icon(Icons.home), title: Text('Home')),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _AppMenuAction.progress,
           child: ListTile(leading: Icon(Icons.timeline), title: Text('Progress')),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _AppMenuAction.logFood,
           child: ListTile(leading: Icon(Icons.restaurant), title: Text('Log Food')),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _AppMenuAction.logActivity,
           child: ListTile(leading: Icon(Icons.fitness_center), title: Text('Log Activity')),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _AppMenuAction.tips,
           child: ListTile(leading: Icon(Icons.lightbulb), title: Text('Tips')),
         ),
-        const PopupMenuDivider(),
-        // Appearance section
-        PopupMenuItem<_AppMenuAction>(
+        PopupMenuDivider(),
+        PopupMenuItem(
           enabled: false,
-          child: Text('Appearance', style: Theme.of(context).textTheme.labelLarge),
+          child: Text('Appearance'),
         ),
-        PopupMenuItem<_AppMenuAction>(
+        PopupMenuItem(
           value: _AppMenuAction.toggleDark,
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              final ThemeMode mode = ThemeController.of(context).themeMode.value;
-              final bool isDark = mode == ThemeMode.dark;
-              return SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Dark theme'),
-                value: isDark,
-                onChanged: (_) {
-                  Navigator.of(context).pop(); // close the menu so the switch feels responsive
-                  ThemeController.of(context).setThemeMode(isDark ? ThemeMode.light : ThemeMode.dark);
-                },
-              );
-            },
+          child: ListTile(
+            leading: Icon(Icons.dark_mode),
+            title: Text('Dark theme (toggle)'),
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _AppMenuAction.systemTheme,
           child: ListTile(leading: Icon(Icons.settings_suggest), title: Text('Use system theme')),
         ),
-        const PopupMenuDivider(),
-        // Account / settings section
-        const PopupMenuItem(
+        PopupMenuDivider(),
+        PopupMenuItem(
           value: _AppMenuAction.editProfileGoal,
           child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit Profile & Goal')),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: _AppMenuAction.signOut,
           child: ListTile(leading: Icon(Icons.logout), title: Text('Sign out')),
         ),

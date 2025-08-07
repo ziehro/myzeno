@@ -6,23 +6,31 @@ import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/screens/tips_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final int initialIndex;
+  const MainScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
-  final PageController _pageController = PageController();
+  late int _currentIndex;
+  late final PageController _pageController;
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const LogFoodScreen(),
-    const LogActivityScreen(),
-    const ProgressScreen(),
-    const TipsScreen(),
+  final List<Widget> _pages = const [
+    HomeScreen(),
+    LogFoodScreen(),
+    LogActivityScreen(),
+    ProgressScreen(),
+    TipsScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentIndex);
+  }
 
   @override
   void dispose() {
@@ -30,11 +38,7 @@ class _MainScreenState extends State<MainScreen> {
     super.dispose();
   }
 
-  void _onPageChanged(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
-  }
+  void _onPageChanged(int index) => setState(() => _currentIndex = index);
 
   void _onItemTapped(int index) {
     _pageController.animateToPage(
@@ -55,29 +59,14 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.restaurant),
-            label: 'Food',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.fitness_center),
-            label: 'Activity',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timeline),
-            label: 'Progress',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.lightbulb_outline),
-            label: 'Tips',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.restaurant), label: 'Food'),
+          BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Activity'),
+          BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'Progress'),
+          BottomNavigationBarItem(icon: Icon(Icons.lightbulb_outline), label: 'Tips'),
         ],
-        type: BottomNavigationBarType.fixed, // This ensures all labels are visible
       ),
     );
   }

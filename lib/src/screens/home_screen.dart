@@ -12,6 +12,7 @@ import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 import 'package:zeno/src/screens/tips_screen.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
+import 'package:zeno/src/screens/main_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -233,12 +234,20 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const LogFoodScreen())),
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const MainScreen(initialIndex: 1), // Food tab
+                    ));
+                  },
                   icon: const Icon(Icons.restaurant_menu),
                   label: const Text("Log Food"),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const LogActivityScreen())),
+                  onPressed: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const MainScreen(initialIndex: 2), // Activity tab
+                    ));
+                  },
                   icon: const Icon(Icons.fitness_center),
                   label: const Text("Log Activity"),
                 ),
