@@ -36,12 +36,24 @@ class ProgressScreen extends StatefulWidget {
 class _ProgressScreenState extends State<ProgressScreen> {
   final FirebaseService _firebaseService = FirebaseService();
   Future<Map<String, dynamic>>? _userDataFuture;
+  final ScrollController _netCalorieScrollController = ScrollController();
+  final ScrollController _weightChartScrollController = ScrollController();
+  final ScrollController _calorieChartScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _userDataFuture = _loadUserData();
   }
+
+  @override
+  void dispose() {
+    _netCalorieScrollController.dispose();
+    _weightChartScrollController.dispose();
+    _calorieChartScrollController.dispose();
+    super.dispose();
+  }
+
 
   Future<Map<String, dynamic>> _loadUserData() async {
     final profile = await _firebaseService.getUserProfile();
@@ -135,6 +147,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       final foodLogs = foodSnapshot.data ?? [];
                       final activityLogs = activitySnapshot.data ?? [];
 
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (_netCalorieScrollController.hasClients) {
+                          _netCalorieScrollController.jumpTo(_netCalorieScrollController.position.maxScrollExtent);
+                        }
+                        if (_weightChartScrollController.hasClients) {
+                          _weightChartScrollController.jumpTo(_weightChartScrollController.position.maxScrollExtent);
+                        }
+                        if (_calorieChartScrollController.hasClients) {
+                          _calorieChartScrollController.jumpTo(_calorieChartScrollController.position.maxScrollExtent);
+                        }
+                      });
+
                       return ListView(
                         padding: const EdgeInsets.all(16.0),
                         children: [
@@ -166,7 +190,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
         SizedBox(
           height: 255,
           child: PageView.builder(
-            controller: PageController(viewportFraction: 0.9),
+            controller: PageController(viewportFraction: 0.9, initialPage: max(0, dailyStats.length - 1)),
             itemCount: dailyStats.length,
             itemBuilder: (context, index) {
               final stat = dailyStats[index];
@@ -201,7 +225,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       ),
                       Align(
                         alignment: Alignment.bottomRight,
-                        // --- THIS IS THE FIX ---
                         child: TextButton(
                           onPressed: () => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
                           child: const Text("Details"),
@@ -250,10 +273,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
   Widget _buildNetCalorieChartSection(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final calorieTarget = profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget;
-    final chartData = _prepareNetCalorieBarData(foodLogs, activityLogs, calorieTarget);
+    final chartData = _prepareNetCalorieBarData(foodLogs, activityLogs, calorieTarget, profile.createdAt);
     final barGroups = chartData['barGroups'] as List<BarChartGroupData>;
     final maxNetValue = chartData['maxNetValue'] as double;
     final maxY = max(calorieTarget.toDouble(), maxNetValue) * 1.2;
+    final chartWidth = max(MediaQuery.of(context).size.width - 64, barGroups.length * 50.0);
+
 
     return Card(
       elevation: 4,
@@ -267,46 +292,51 @@ class _ProgressScreenState extends State<ProgressScreen> {
             const SizedBox(height: 24),
             barGroups.isEmpty
                 ? const Center(heightFactor: 5, child: Text("Log data to see your net balance."))
-                : SizedBox(
-              height: 220,
-              child: BarChart(
-                BarChartData(
-                  maxY: maxY,
-                  barGroups: barGroups,
-                  extraLinesData: ExtraLinesData(
-                    horizontalLines: [
-                      HorizontalLine(
-                        y: calorieTarget.toDouble(),
-                        color: Colors.redAccent,
-                        strokeWidth: 3,
-                        dashArray: [10, 5],
-                        label: HorizontalLineLabel(
-                          show: true,
-                          alignment: Alignment.topRight,
-                          padding: const EdgeInsets.only(right: 5, bottom: 5),
-                          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12),
-                          labelResolver: (line) => 'Goal',
+                : SingleChildScrollView(
+              controller: _netCalorieScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                height: 220,
+                width: chartWidth,
+                child: BarChart(
+                  BarChartData(
+                    maxY: maxY,
+                    barGroups: barGroups,
+                    extraLinesData: ExtraLinesData(
+                      horizontalLines: [
+                        HorizontalLine(
+                          y: calorieTarget.toDouble(),
+                          color: Colors.redAccent,
+                          strokeWidth: 3,
+                          dashArray: [10, 5],
+                          label: HorizontalLineLabel(
+                            show: true,
+                            alignment: Alignment.topRight,
+                            padding: const EdgeInsets.only(right: 5, bottom: 5),
+                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12),
+                            labelResolver: (line) => 'Goal',
+                          ),
+                        ),
+                      ],
+                    ),
+                    titlesData: FlTitlesData(
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (value, meta) {
+                            final date = chartData['dates'][value.toInt()];
+                            return SideTitleWidget(axisSide: meta.axisSide, child: Text(DateFormat('MMM\ndd').format(date)));
+                          },
+                          reservedSize: 36,
                         ),
                       ),
-                    ],
-                  ),
-                  titlesData: FlTitlesData(
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          final day = DateTime.now().subtract(Duration(days: 6 - value.toInt()));
-                          return SideTitleWidget(axisSide: meta.axisSide, child: Text(DateFormat.E().format(day)));
-                        },
-                        reservedSize: 28,
-                      ),
+                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 45)),
+                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
-                    leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 45)),
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 500),
+                    borderData: FlBorderData(show: false),
                   ),
-                  gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 500),
-                  borderData: FlBorderData(show: false),
                 ),
               ),
             ),
@@ -342,35 +372,42 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 final chartData = _prepareWeightTrendData(profile, goal, weightLogs, foodLogs, activityLogs);
                 final actualSpots = chartData['actual']!;
                 final theoreticalSpots = chartData['theoretical']!;
-                return SizedBox(
-                  height: 200,
-                  child: LineChart(
-                    LineChartData(
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: actualSpots,
-                          isCurved: true,
-                          color: Theme.of(context).colorScheme.primary,
-                          barWidth: 4,
-                          belowBarData: BarAreaData(show: true, color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                final chartWidth = max(MediaQuery.of(context).size.width - 64, actualSpots.length * 50.0);
+
+                return SingleChildScrollView(
+                  controller: _weightChartScrollController,
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    height: 200,
+                    width: chartWidth,
+                    child: LineChart(
+                      LineChartData(
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: actualSpots,
+                            isCurved: true,
+                            color: Theme.of(context).colorScheme.primary,
+                            barWidth: 4,
+                            belowBarData: BarAreaData(show: true, color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
+                          ),
+                          LineChartBarData(
+                            spots: theoreticalSpots,
+                            isCurved: true,
+                            color: Colors.grey,
+                            barWidth: 3,
+                            dotData: const FlDotData(show: false),
+                            dashArray: [5, 5],
+                          ),
+                        ],
+                        titlesData: FlTitlesData(
+                          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
+                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                         ),
-                        LineChartBarData(
-                          spots: theoreticalSpots,
-                          isCurved: true,
-                          color: Colors.grey,
-                          barWidth: 3,
-                          dotData: const FlDotData(show: false),
-                          dashArray: [5, 5],
-                        ),
-                      ],
-                      titlesData: FlTitlesData(
-                        bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
-                        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        gridData: FlGridData(show: true, drawVerticalLine: false),
+                        borderData: FlBorderData(show: false),
                       ),
-                      gridData: FlGridData(show: true, drawVerticalLine: false),
-                      borderData: FlBorderData(show: false),
                     ),
                   ),
                 );
@@ -425,7 +462,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Widget _buildCalorieChartSection(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
-    final barGroups = _prepareCalorieBarData(foodLogs, activityLogs);
+    final chartData = _prepareCalorieBarData(foodLogs, activityLogs);
+    final barGroups = chartData['barGroups'] as List<BarChartGroupData>;
+    final chartWidth = max(MediaQuery.of(context).size.width - 64, barGroups.length * 50.0);
 
     return Card(
       elevation: 4,
@@ -439,29 +478,34 @@ class _ProgressScreenState extends State<ProgressScreen> {
             const SizedBox(height: 24),
             barGroups.isEmpty
                 ? const Center(heightFactor: 5, child: Text("No data for the last 7 days."))
-                : SizedBox(
-              height: 200,
-              child: BarChart(
-                BarChartData(
-                  barGroups: barGroups,
-                  titlesData: FlTitlesData(
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) {
-                          final day = DateTime.now().subtract(Duration(days: 6 - value.toInt()));
-                          return SideTitleWidget(axisSide: meta.axisSide, child: Text(DateFormat.E().format(day)));
-                        },
-                        reservedSize: 28,
+                : SingleChildScrollView(
+              controller: _calorieChartScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                height: 200,
+                width: chartWidth,
+                child: BarChart(
+                  BarChartData(
+                    barGroups: barGroups,
+                    titlesData: FlTitlesData(
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (value, meta) {
+                            final date = chartData['dates'][value.toInt()];
+                            return SideTitleWidget(axisSide: meta.axisSide, child: Text(DateFormat('MMM\ndd').format(date)));
+                          },
+                          reservedSize: 36,
+                        ),
                       ),
+                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
+                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
-                    leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    gridData: FlGridData(show: true, drawVerticalLine: false),
+                    borderData: FlBorderData(show: false),
+                    barTouchData: BarTouchData(enabled: true),
                   ),
-                  gridData: FlGridData(show: true, drawVerticalLine: false),
-                  borderData: FlBorderData(show: false),
-                  barTouchData: BarTouchData(enabled: true),
                 ),
               ),
             ),
@@ -521,9 +565,12 @@ class _ProgressScreenState extends State<ProgressScreen> {
     final dailyCalorieTarget = (profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget).toDouble();
     final baseBurn = profile.recommendedDailyIntake.toDouble();
 
+    final startDate = profile.createdAt;
     final today = DateTime.now();
-    for (int i = 6; i >= 0; i--) {
-      final date = DateTime(today.year, today.month, today.day).subtract(Duration(days: i));
+    final daysSinceStart = today.difference(startDate).inDays;
+
+    for (int i = 0; i <= daysSinceStart; i++) {
+      final date = DateTime(startDate.year, startDate.month, startDate.day).add(Duration(days: i));
       dailyStatsMap[date] = _DailyStat(
           date: date,
           caloriesIn: 0.0,
@@ -570,19 +617,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
     });
 
     var sortedStats = dailyStatsMap.values.toList();
-    sortedStats.sort((a,b) => b.date.compareTo(a.date));
+    sortedStats.sort((a,b) => a.date.compareTo(b.date));
     return sortedStats;
   }
 
-  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget) {
+  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDate) {
     final Map<int, double> dailyNet = {};
+    List<DateTime> dates = [];
     double maxNetValue = 0.0;
-    final today = DateTime.now();
-    final sevenDaysAgo = today.subtract(const Duration(days: 6));
 
-    for (int i = 0; i < 7; i++) {
-      final day = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day).add(Duration(days: i));
+    final today = DateTime.now();
+    final daysSinceStart = today.difference(startDate).inDays;
+
+
+    for (int i = 0; i <= daysSinceStart; i++) {
+      final day = DateTime(startDate.year, startDate.month, startDate.day).add(Duration(days: i));
       dailyNet[day.millisecondsSinceEpoch] = 0.0;
+      dates.add(day);
     }
 
     for (final log in foodLogs) {
@@ -599,9 +650,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
       }
     }
 
-    final barGroups = List.generate(7, (index) {
-      final day = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day).add(Duration(days: index));
-      final dayKey = day.millisecondsSinceEpoch;
+    final barGroups = List.generate(dates.length, (index) {
+      final dayKey = dates[index].millisecondsSinceEpoch;
       final netValue = dailyNet[dayKey] ?? 0.0;
       final isOverGoal = netValue > calorieTarget;
 
@@ -622,19 +672,39 @@ class _ProgressScreenState extends State<ProgressScreen> {
       );
     });
 
-    return {'barGroups': barGroups, 'maxNetValue': maxNetValue};
+    return {'barGroups': barGroups, 'maxNetValue': maxNetValue, 'dates': dates};
   }
 
-  List<BarChartGroupData> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<int, double> dailyConsumed = {};
     final Map<int, double> dailyBurned = {};
-    final today = DateTime.now();
-    final sevenDaysAgo = today.subtract(const Duration(days: 6));
+    List<DateTime> dates = [];
 
-    for (int i = 0; i < 7; i++) {
-      final day = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day).add(Duration(days: i));
+    if(foodLogs.isEmpty && activityLogs.isEmpty) return {'barGroups': [], 'dates': []};
+
+    DateTime firstDate = DateTime.now();
+
+    if(foodLogs.isNotEmpty){
+      firstDate = foodLogs.map((e) => e.date).reduce((a, b) => a.isBefore(b) ? a : b);
+    }
+
+    if(activityLogs.isNotEmpty){
+      final firstActivityDate = activityLogs.map((e) => e.date).reduce((a, b) => a.isBefore(b) ? a : b);
+      if(firstActivityDate.isBefore(firstDate)){
+        firstDate = firstActivityDate;
+      }
+    }
+
+
+    final today = DateTime.now();
+    final daysSinceStart = today.difference(firstDate).inDays;
+
+
+    for (int i = 0; i <= daysSinceStart; i++) {
+      final day = DateTime(firstDate.year, firstDate.month, firstDate.day).add(Duration(days: i));
       dailyConsumed[day.millisecondsSinceEpoch] = 0.0;
       dailyBurned[day.millisecondsSinceEpoch] = 0.0;
+      dates.add(day);
     }
 
     for (final log in foodLogs) {
@@ -651,9 +721,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
       }
     }
 
-    return List.generate(7, (index) {
-      final day = DateTime(sevenDaysAgo.year, sevenDaysAgo.month, sevenDaysAgo.day).add(Duration(days: index));
-      final dayKey = day.millisecondsSinceEpoch;
+    final barGroups =  List.generate(dates.length, (index) {
+      final dayKey = dates[index].millisecondsSinceEpoch;
       return BarChartGroupData(
         x: index,
         barRods: [
@@ -662,6 +731,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
         ],
       );
     });
+
+    return {'barGroups': barGroups, 'dates': dates};
   }
 
   Map<String, List<FlSpot>> _prepareWeightTrendData(UserProfile profile, UserGoal goal, List<WeightLog> weightLogs, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
@@ -32,6 +33,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
   late final TextEditingController _weightController;
   Sex? _selectedSex;
   ActivityLevel? _selectedActivityLevel;
+  DateTime _startDate = DateTime.now();
 
   late bool _isEditing;
 
@@ -46,9 +48,24 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
     _weightController = TextEditingController(text: weightToDisplay.toString());
     _lbsController = TextEditingController(text: _isEditing ? widget.userGoal!.lbsToLose.toString() : '');
     _daysController = TextEditingController(text: _isEditing ? widget.userGoal!.days.toString() : '');
+    _startDate = widget.userProfile?.createdAt ?? DateTime.now();
 
     _selectedSex = _isEditing ? widget.userProfile!.sex : null;
     _selectedActivityLevel = _isEditing ? widget.userProfile!.activityLevel : null;
+  }
+
+  Future<void> _selectStartDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != _startDate) {
+      setState(() {
+        _startDate = picked;
+      });
+    }
   }
 
   Future<void> _saveData() async {
@@ -80,7 +97,6 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
 
     final newWeight = double.parse(_weightController.text);
     final startWeight = _isEditing ? widget.userProfile!.startWeight : newWeight;
-    final creationDate = _isEditing ? widget.userProfile!.createdAt : DateTime.now();
 
     final profile = UserProfile(
       uid: currentUser.uid,
@@ -89,7 +105,7 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
       height: double.parse(_heightController.text),
       age: int.parse(_ageController.text),
       sex: _selectedSex!,
-      createdAt: creationDate,
+      createdAt: _startDate,
       activityLevel: _selectedActivityLevel!,
     );
 
@@ -179,6 +195,12 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
                 hint: 'e.g., 180',
               ),
               const SizedBox(height: 16),
+              ListTile(
+                title: Text("Start Date: ${DateFormat.yMMMd().format(_startDate)}"),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: () => _selectStartDate(context),
+              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<Sex>(
                 value: _selectedSex,
                 decoration: const InputDecoration(labelText: 'Sex'),
@@ -263,8 +285,6 @@ class _GoalSettingScreenState extends State<GoalSettingScreen> {
     );
   }
 
-  // --- THIS IS THE FIX ---
-  // The full body of the helper function is now included.
   TextFormField _buildTextField({
     required TextEditingController controller,
     required String label,
