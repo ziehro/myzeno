@@ -1,30 +1,19 @@
+// lib/src/screens/progress_screen.dart
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/activity_log.dart';
+import 'package:zeno/src/models/daily_stat.dart';
 import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 import 'dart:math';
-
-// Helper class to hold the stats for a single day
-class _DailyStat {
-  final DateTime date;
-  final double caloriesIn;
-  final double caloriesOut; // Logged activity burn
-  final double differenceFromGoal;
-  final double theoreticalGainLoss;
-
-  _DailyStat({
-    required this.date,
-    required this.caloriesIn,
-    required this.caloriesOut,
-    required this.differenceFromGoal,
-    required this.theoreticalGainLoss,
-  });
-}
+import 'widgets/daily_stats_carousel.dart';
+import 'widgets/net_calorie_chart_section.dart';
+import 'widgets/weight_chart_section.dart';
+import 'widgets/calorie_chart_section.dart';
 
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
@@ -54,15 +43,13 @@ class _ProgressScreenState extends State<ProgressScreen> {
     super.dispose();
   }
 
-
   Future<Map<String, dynamic>> _loadUserData() async {
     final profile = await _firebaseService.getUserProfile();
     final goal = await _firebaseService.getUserGoal();
     return {'profile': profile, 'goal': goal};
   }
 
-  // Method to show the daily details dialog
-  Future<void> _showDailyDetailsDialog(BuildContext context, _DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
+  Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
     final day = stat.date;
     final foodForDay = allFood.where((log) => log.date.year == day.year && log.date.month == day.month && log.date.day == day.day).toList();
     final activitiesForDay = allActivities.where((log) => log.date.year == day.year && log.date.month == day.month && log.date.day == day.day).toList();
@@ -71,7 +58,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text("Details for ${_formatDate(day)}"),
+          title: Text("Details for ${DateFormat('MMMM d').format(day)}"),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -162,13 +149,42 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       return ListView(
                         padding: const EdgeInsets.all(16.0),
                         children: [
-                          _buildDailyStatsCarousel(userProfile, userGoal, foodLogs, activityLogs),
+                          DailyStatsCarousel(
+                            dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
+                            userProfile: userProfile,
+                            onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
+                          ),
                           const SizedBox(height: 24),
-                          _buildNetCalorieChartSection(userProfile, userGoal, foodLogs, activityLogs),
+                          NetCalorieChartSection(
+                            profile: userProfile,
+                            goal: userGoal,
+                            chartData: _prepareNetCalorieBarData(foodLogs, activityLogs, userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget, userProfile.createdAt),
+                            scrollController: _netCalorieScrollController,
+                          ),
                           const SizedBox(height: 24),
-                          _buildWeightChartSection(userProfile, userGoal, foodLogs, activityLogs),
+                          StreamBuilder<List<WeightLog>>(
+                              stream: _firebaseService.weightLogStream,
+                              builder: (context, weightSnapshot) {
+                                if (weightSnapshot.connectionState == ConnectionState.waiting) {
+                                  return const Center(child: CircularProgressIndicator());
+                                }
+                                final weightLogs = weightSnapshot.data ?? [];
+                                if (weightLogs.length < 2) {
+                                  return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
+                                }
+                                return WeightChartSection(
+                                  profile: userProfile,
+                                  goal: userGoal,
+                                  chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
+                                  scrollController: _weightChartScrollController,
+                                );
+                              }
+                          ),
                           const SizedBox(height: 24),
-                          _buildCalorieChartSection(foodLogs, activityLogs),
+                          CalorieChartSection(
+                            chartData: _prepareCalorieBarData(foodLogs, activityLogs),
+                            scrollController: _calorieChartScrollController,
+                          ),
                         ],
                       );
                     });
@@ -178,389 +194,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  // --- UPDATED: DAILY STATS CAROUSEL ---
-  Widget _buildDailyStatsCarousel(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
-    final dailyStats = _prepareDailyStats(profile, goal, foodLogs, activityLogs);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Daily Summaries", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 255,
-          child: PageView.builder(
-            controller: PageController(viewportFraction: 0.9, initialPage: max(0, dailyStats.length - 1)),
-            itemCount: dailyStats.length,
-            itemBuilder: (context, index) {
-              final stat = dailyStats[index];
-              final totalCaloriesOut = profile.recommendedDailyIntake + stat.caloriesOut;
-
-              return Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                clipBehavior: Clip.antiAlias,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_formatDate(stat.date), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      const Divider(height: 16),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            children: [
-                              _statRow("Calories In:", "${stat.caloriesIn.toInt()} kcal"),
-                              _statRow("Calories Out:", "${totalCaloriesOut.toInt()} kcal"),
-                              const SizedBox(height: 8),
-                              _statRow("Net vs Goal:", "${stat.differenceFromGoal.toStringAsFixed(0)} kcal",
-                                  valueColor: stat.differenceFromGoal > 0 ? Colors.orange.shade700 : Colors.green.shade700),
-                              _statRow("Theoretical Change:", "${stat.theoreticalGainLoss.toStringAsFixed(2)} lbs",
-                                  valueColor: stat.theoreticalGainLoss >= 0 ? Colors.orange.shade700 : Colors.green.shade700),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: TextButton(
-                          onPressed: () => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
-                          child: const Text("Details"),
-                        ),
-                      )
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final checkDate = DateTime(date.year, date.month, date.day);
-
-    if (checkDate == today) return "Today";
-    if (checkDate == yesterday) return "Yesterday";
-    return DateFormat('MMMM d').format(date);
-  }
-
-  Widget _statRow(String label, String value, {Color? valueColor}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: valueColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNetCalorieChartSection(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
-    final calorieTarget = profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget;
-    final chartData = _prepareNetCalorieBarData(foodLogs, activityLogs, calorieTarget, profile.createdAt);
-    final barGroups = chartData['barGroups'] as List<BarChartGroupData>;
-    final maxNetValue = chartData['maxNetValue'] as double;
-    final maxY = max(calorieTarget.toDouble(), maxNetValue) * 1.2;
-    final chartWidth = max(MediaQuery.of(context).size.width - 64, barGroups.length * 50.0);
-
-
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text("Net Calorie Balance", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            barGroups.isEmpty
-                ? const Center(heightFactor: 5, child: Text("Log data to see your net balance."))
-                : SingleChildScrollView(
-              controller: _netCalorieScrollController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                height: 220,
-                width: chartWidth,
-                child: BarChart(
-                  BarChartData(
-                    maxY: maxY,
-                    barGroups: barGroups,
-                    extraLinesData: ExtraLinesData(
-                      horizontalLines: [
-                        HorizontalLine(
-                          y: calorieTarget.toDouble(),
-                          color: Colors.redAccent,
-                          strokeWidth: 3,
-                          dashArray: [10, 5],
-                          label: HorizontalLineLabel(
-                            show: true,
-                            alignment: Alignment.topRight,
-                            padding: const EdgeInsets.only(right: 5, bottom: 5),
-                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 12),
-                            labelResolver: (line) => 'Goal',
-                          ),
-                        ),
-                      ],
-                    ),
-                    titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (value, meta) {
-                            final date = chartData['dates'][value.toInt()];
-                            return SideTitleWidget(axisSide: meta.axisSide, child: Text(DateFormat('MMM\ndd').format(date)));
-                          },
-                          reservedSize: 36,
-                        ),
-                      ),
-                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 45)),
-                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    ),
-                    gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 500),
-                    borderData: FlBorderData(show: false),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildNetCalorieLegend(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWeightChartSection(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text("Weight Trend", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            StreamBuilder<List<WeightLog>>(
-              stream: _firebaseService.weightLogStream,
-              builder: (context, weightSnapshot) {
-                if (weightSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final weightLogs = weightSnapshot.data ?? [];
-                if (weightLogs.length < 2) {
-                  return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
-                }
-                final chartData = _prepareWeightTrendData(profile, goal, weightLogs, foodLogs, activityLogs);
-                final actualSpots = chartData['actual']!;
-                final theoreticalSpots = chartData['theoretical']!;
-                final chartWidth = max(MediaQuery.of(context).size.width - 64, actualSpots.length * 50.0);
-
-                return SingleChildScrollView(
-                  controller: _weightChartScrollController,
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    height: 200,
-                    width: chartWidth,
-                    child: LineChart(
-                      LineChartData(
-                        lineBarsData: [
-                          LineChartBarData(
-                            spots: actualSpots,
-                            isCurved: true,
-                            color: Theme.of(context).colorScheme.primary,
-                            barWidth: 4,
-                            belowBarData: BarAreaData(show: true, color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
-                          ),
-                          LineChartBarData(
-                            spots: theoreticalSpots,
-                            isCurved: true,
-                            color: Colors.grey,
-                            barWidth: 3,
-                            dotData: const FlDotData(show: false),
-                            dashArray: [5, 5],
-                          ),
-                        ],
-                        titlesData: FlTitlesData(
-                          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
-                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        ),
-                        gridData: FlGridData(show: true, drawVerticalLine: false),
-                        borderData: FlBorderData(show: false),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildWeightTrendLegend(),
-            const SizedBox(height: 16),
-            _buildWeightHistoryList(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWeightHistoryList() {
-    return StreamBuilder<List<WeightLog>>(
-      stream: _firebaseService.weightLogStream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting || !snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        final recentLogs = snapshot.data!;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Divider(),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<WeightLog>(
-              decoration: InputDecoration(
-                labelText: "Recent Logs",
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-              ),
-              items: recentLogs.map((log) {
-                return DropdownMenuItem<WeightLog>(
-                  value: log,
-                  child: Text(
-                    '${DateFormat('MMMM d, yyyy').format(log.date)} - ${log.weight.toStringAsFixed(1)} lbs',
-                  ),
-                );
-              }).toList(),
-              onChanged: (WeightLog? newValue) {
-                // Handle the selection if needed
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildCalorieChartSection(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
-    final chartData = _prepareCalorieBarData(foodLogs, activityLogs);
-    final barGroups = chartData['barGroups'] as List<BarChartGroupData>;
-    final chartWidth = max(MediaQuery.of(context).size.width - 64, barGroups.length * 50.0);
-
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text("Consumed vs. Burned", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            barGroups.isEmpty
-                ? const Center(heightFactor: 5, child: Text("No data for the last 7 days."))
-                : SingleChildScrollView(
-              controller: _calorieChartScrollController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                height: 200,
-                width: chartWidth,
-                child: BarChart(
-                  BarChartData(
-                    barGroups: barGroups,
-                    titlesData: FlTitlesData(
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (value, meta) {
-                            final date = chartData['dates'][value.toInt()];
-                            return SideTitleWidget(axisSide: meta.axisSide, child: Text(DateFormat('MMM\ndd').format(date)));
-                          },
-                          reservedSize: 36,
-                        ),
-                      ),
-                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40)),
-                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    ),
-                    gridData: FlGridData(show: true, drawVerticalLine: false),
-                    borderData: FlBorderData(show: false),
-                    barTouchData: BarTouchData(enabled: true),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildConsumedBurnedLegend(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConsumedBurnedLegend() {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      _legendItem(Colors.orange, "Consumed"),
-      const SizedBox(width: 20),
-      _legendItem(Colors.lightGreen, "Burned"),
-    ]);
-  }
-
-  Widget _buildNetCalorieLegend() {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      _legendItem(Colors.green, "Below Goal"),
-      const SizedBox(width: 16),
-      _legendItem(Colors.orange, "Above Goal"),
-      const SizedBox(width: 16),
-      _legendItem(Colors.redAccent, "Daily Goal", isLine: true),
-    ]);
-  }
-
-  Widget _buildWeightTrendLegend() {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      _legendItem(Theme.of(context).colorScheme.primary, "Actual Weight"),
-      const SizedBox(width: 16),
-      _legendItem(Colors.grey, "Theoretical Weight", isLine: true),
-    ]);
-  }
-
-  Widget _legendItem(Color color, String text, {bool isLine = false}) {
-    return Row(children: [
-      Container(
-        width: 16,
-        height: isLine ? 3 : 16,
-        decoration: BoxDecoration(
-          color: color,
-          border: isLine ? Border.all(color: color, width: 0) : null,
-          borderRadius: isLine ? null : BorderRadius.circular(4),
-        ),
-      ),
-      const SizedBox(width: 8),
-      Text(text),
-    ]);
-  }
-
-  List<_DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
-    final Map<DateTime, _DailyStat> dailyStatsMap = {};
+  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+    final Map<DateTime, DailyStat> dailyStatsMap = {};
     const caloriesPerPound = 3500.0;
     final dailyCalorieTarget = (profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget).toDouble();
     final baseBurn = profile.recommendedDailyIntake.toDouble();
@@ -571,7 +206,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
     for (int i = 0; i <= daysSinceStart; i++) {
       final date = DateTime(startDate.year, startDate.month, startDate.day).add(Duration(days: i));
-      dailyStatsMap[date] = _DailyStat(
+      dailyStatsMap[date] = DailyStat(
           date: date,
           caloriesIn: 0.0,
           caloriesOut: 0.0,
@@ -583,7 +218,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final day = DateTime(log.date.year, log.date.month, log.date.day);
       if (dailyStatsMap.containsKey(day)) {
         final currentStat = dailyStatsMap[day]!;
-        dailyStatsMap[day] = _DailyStat(
+        dailyStatsMap[day] = DailyStat(
             date: day,
             caloriesIn: currentStat.caloriesIn + log.calories,
             caloriesOut: currentStat.caloriesOut,
@@ -596,7 +231,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final day = DateTime(log.date.year, log.date.month, log.date.day);
       if (dailyStatsMap.containsKey(day)) {
         final currentStat = dailyStatsMap[day]!;
-        dailyStatsMap[day] = _DailyStat(
+        dailyStatsMap[day] = DailyStat(
             date: day,
             caloriesIn: currentStat.caloriesIn,
             caloriesOut: currentStat.caloriesOut + log.caloriesBurned,
@@ -607,7 +242,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
     dailyStatsMap.forEach((date, stat) {
       final netCalorieIntake = stat.caloriesIn - (baseBurn + stat.caloriesOut);
-      dailyStatsMap[date] = _DailyStat(
+      dailyStatsMap[date] = DailyStat(
         date: date,
         caloriesIn: stat.caloriesIn,
         caloriesOut: stat.caloriesOut,
