@@ -11,11 +11,12 @@ import 'package:zeno/src/screens/log_food_screen.dart';
 import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 import 'package:zeno/src/screens/tips_screen.dart';
-import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
-import 'package:zeno/src/screens/main_screen.dart';
+import 'package:zeno/src/widgets/app_menu_button.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final Function(int)? onNavigateToTab;
+
+  const HomeScreen({super.key, this.onNavigateToTab});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -94,7 +95,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Confirmation Dialog for Signing Out
   Future<void> _showSignOutConfirmationDialog() async {
     return showDialog<void>(
       context: context,
@@ -120,7 +120,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Used by the menu item to keep previous behavior
   void _handleEditProfileAndGoal() {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (context) => GoalSettingScreen(
@@ -158,6 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
           AppMenuButton(
             onEditProfileAndGoal: _handleEditProfileAndGoal,
             onSignOut: _showSignOutConfirmationDialog,
+            onNavigateToTab: widget.onNavigateToTab, // Pass the callback
           ),
         ],
       ),
@@ -235,18 +235,16 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const MainScreen(initialIndex: 1), // Food tab
-                    ));
+                    // Use callback instead of navigation
+                    widget.onNavigateToTab?.call(1); // Food tab
                   },
                   icon: const Icon(Icons.restaurant_menu),
                   label: const Text("Log Food"),
                 ),
                 ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const MainScreen(initialIndex: 2), // Activity tab
-                    ));
+                    // Use callback instead of navigation
+                    widget.onNavigateToTab?.call(2); // Activity tab
                   },
                   icon: const Icon(Icons.fitness_center),
                   label: const Text("Log Activity"),

@@ -13,10 +13,12 @@ import 'widgets/daily_stats_carousel.dart';
 import 'widgets/net_calorie_chart_section.dart';
 import 'widgets/weight_chart_section.dart';
 import 'widgets/calorie_chart_section.dart';
-import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
+import 'package:zeno/src/widgets/app_menu_button.dart';
 
 class ProgressScreen extends StatefulWidget {
-  const ProgressScreen({super.key});
+  final Function(int)? onNavigateToTab;
+
+  const ProgressScreen({super.key, this.onNavigateToTab});
 
   @override
   State<ProgressScreen> createState() => _ProgressScreenState();
@@ -112,7 +114,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Progress'),
-        actions: const [AppMenuButton()], // <-- added
+        actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _userDataFuture,
@@ -209,8 +211,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  // ------- helpers (unchanged from your version) -------
-  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) { /* ... same as yours ... */
+  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<DateTime, DailyStat> dailyStatsMap = {};
     const caloriesPerPound = 3500.0;
     final dailyCalorieTarget = (profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget).toDouble();
@@ -275,7 +276,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return sortedStats;
   }
 
-  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDateRaw) { /* ... same as yours ... */
+  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDateRaw) {
     final Map<int, double> dailyNet = {};
     final List<DateTime> dates = [];
     double maxNetValue = 0.0;
@@ -331,7 +332,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'barGroups': barGroups, 'maxNetValue': maxNetValue, 'dates': dates};
   }
 
-  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) { /* ... same as yours ... */
+  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<int, double> dailyConsumed = {};
     final Map<int, double> dailyBurned = {};
     final List<DateTime> dates = [];
@@ -405,24 +406,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'barGroups': barGroups, 'dates': dates};
   }
 
-  Map<String, List<FlSpot>> _prepareWeightTrendData(
+  Map<String, dynamic> _prepareWeightTrendData(
       UserProfile profile,
       UserGoal goal,
       List<WeightLog> weightLogs,
       List<FoodLog> foodLogs,
       List<ActivityLog> activityLogs,
-      ) { /* ... same as yours ... */
-    if (weightLogs.isEmpty) return {'actual': [], 'theoretical': []};
-
-    weightLogs.sort((a, b) => a.date.compareTo(b.date));
-    final actualSpots = weightLogs.asMap().entries.map((entry) {
-      return FlSpot(entry.key.toDouble(), entry.value.weight);
-    }).toList();
-
-    final List<FlSpot> theoreticalSpots = [];
-    final baseBurn = profile.recommendedDailyIntake;
-    const caloriesPerPound = 3500.0;
-
+      ) {
+    // Create daily net calorie map first
     final Map<DateTime, double> dailyNetCalories = {};
     for (var log in foodLogs) {
       final day = _asLocalDate(log.date);
@@ -433,27 +424,55 @@ class _ProgressScreenState extends State<ProgressScreen> {
       dailyNetCalories.update(day, (value) => value - log.caloriesBurned, ifAbsent: () => -log.caloriesBurned.toDouble());
     }
 
+    // Create a list of all days from start to today
+    final startDate = _asLocalDate(profile.createdAt);
+    final today = _asLocalDate(DateTime.now());
+    final daysSinceStart = today.difference(startDate).inDays;
+
+    final List<DateTime> allDates = [];
+    final List<FlSpot> theoreticalSpots = [];
+    final List<FlSpot> actualSpots = [];
+
+    // Build arrays for every day
+    final baseBurn = profile.recommendedDailyIntake.toDouble();
+    const caloriesPerPound = 3500.0;
     double currentTheoreticalWeight = profile.startWeight;
-    DateTime lastDate = _asLocalDate(profile.createdAt);
 
-    for (int i = 0; i < weightLogs.length; i++) {
-      final logDate = _asLocalDate(weightLogs[i].date);
+    // Create weight log lookup map (day -> list of weights for that day)
+    final Map<DateTime, List<WeightLog>> weightsByDay = {};
+    for (var log in weightLogs) {
+      final day = _asLocalDate(log.date);
+      weightsByDay.update(day, (list) => list..add(log), ifAbsent: () => [log]);
+    }
 
-      int daysSinceLastLog = logDate.difference(lastDate).inDays;
-      if (daysSinceLastLog > 0) {
-        for (int j = 0; j < daysSinceLastLog; j++) {
-          final date = lastDate.add(Duration(days: j));
-          final loggedNetCalories = dailyNetCalories[date] ?? 0.0;
-          final calorieDifference = loggedNetCalories - baseBurn;
-          final weightChange = calorieDifference / caloriesPerPound;
-          currentTheoreticalWeight += weightChange;
-        }
+    for (int i = 0; i <= daysSinceStart; i++) {
+      final currentDay = startDate.add(Duration(days: i));
+      allDates.add(currentDay);
+
+      // Calculate theoretical weight for this day
+      if (i > 0) {
+        // Get net calories for previous day (since weight change happens overnight)
+        final previousDay = startDate.add(Duration(days: i - 1));
+        final netCaloriesForDay = dailyNetCalories[previousDay] ?? 0.0;
+        final netIntake = netCaloriesForDay - baseBurn;
+        final weightChange = netIntake / caloriesPerPound;
+        currentTheoreticalWeight += weightChange;
       }
 
       theoreticalSpots.add(FlSpot(i.toDouble(), currentTheoreticalWeight));
-      lastDate = logDate;
+
+      // Add actual weight spots if any exist for this day
+      if (weightsByDay.containsKey(currentDay)) {
+        for (var weightLog in weightsByDay[currentDay]!) {
+          actualSpots.add(FlSpot(i.toDouble(), weightLog.weight));
+        }
+      }
     }
 
-    return {'actual': actualSpots, 'theoretical': theoreticalSpots};
+    return {
+      'actual': actualSpots,
+      'theoretical': theoreticalSpots,
+      'dates': allDates,
+    };
   }
 }

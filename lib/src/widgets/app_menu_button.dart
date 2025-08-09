@@ -5,17 +5,25 @@ import '../../../main.dart'; // ThemeController
 class AppMenuButton extends StatelessWidget {
   final VoidCallback? onSignOut;
   final VoidCallback? onEditProfileAndGoal;
+  final Function(int)? onNavigateToTab; // Add navigation callback
 
   const AppMenuButton({
     super.key,
     this.onSignOut,
     this.onEditProfileAndGoal,
+    this.onNavigateToTab,
   });
 
   void _go(BuildContext context, int index) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => MainScreen(initialIndex: index),
-    ));
+    if (onNavigateToTab != null) {
+      // Use callback if available (preferred method)
+      onNavigateToTab!(index);
+    } else {
+      // Fallback to navigation (for standalone usage)
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MainScreen(initialIndex: index),
+      ));
+    }
   }
 
   @override

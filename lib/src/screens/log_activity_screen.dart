@@ -3,17 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/activity_log.dart';
 import 'package:zeno/src/services/firebase_service.dart';
-import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
+import 'package:zeno/src/widgets/app_menu_button.dart';
 
 class LogActivityScreen extends StatefulWidget {
-  const LogActivityScreen({super.key});
+  final Function(int)? onNavigateToTab;
+
+  const LogActivityScreen({super.key, this.onNavigateToTab});
 
   @override
   State<LogActivityScreen> createState() => _LogActivityScreenState();
 }
 
 class _LogActivityScreenState extends State<LogActivityScreen> {
-  final _firebaseService = FirebaseService();
+  final FirebaseService _firebaseService = FirebaseService();
 
   Future<void> _showAddEditActivityDialog({ActivityLog? activityLog}) async {
     final nameController = TextEditingController(text: activityLog?.name);
@@ -169,7 +171,7 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Today\'s Activity (${DateFormat.yMMMd().format(DateTime.now())})'),
-        actions: const [AppMenuButton()], // <-- added
+        actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
       ),
       body: StreamBuilder<List<ActivityLog>>(
         stream: _firebaseService.activityLogStream,

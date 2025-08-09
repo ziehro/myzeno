@@ -17,14 +17,6 @@ class _MainScreenState extends State<MainScreen> {
   late int _currentIndex;
   late final PageController _pageController;
 
-  final List<Widget> _pages = const [
-    HomeScreen(),
-    LogFoodScreen(),
-    LogActivityScreen(),
-    ProgressScreen(),
-    TipsScreen(),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -48,13 +40,27 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // Add this method to handle navigation from child screens
+  void _navigateToTab(int index) {
+    _onItemTapped(index);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Create pages with navigation callback
+    final List<Widget> pages = [
+      HomeScreen(onNavigateToTab: _navigateToTab),
+      LogFoodScreen(onNavigateToTab: _navigateToTab),
+      LogActivityScreen(onNavigateToTab: _navigateToTab),
+      ProgressScreen(onNavigateToTab: _navigateToTab),
+      TipsScreen(onNavigateToTab: _navigateToTab),
+    ];
+
     return Scaffold(
       body: PageView(
         controller: _pageController,
         onPageChanged: _onPageChanged,
-        children: _pages,
+        children: pages,
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,

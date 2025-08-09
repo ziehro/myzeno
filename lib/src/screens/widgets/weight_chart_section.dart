@@ -12,7 +12,7 @@ import 'dart:math';
 class WeightChartSection extends StatelessWidget {
   final UserProfile profile;
   final UserGoal goal;
-  final Map<String, List<FlSpot>> chartData;
+  final Map<String, dynamic> chartData; // Changed from Map<String, List<FlSpot>>
   final ScrollController scrollController;
 
   const WeightChartSection({
@@ -25,11 +25,25 @@ class WeightChartSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final actualSpots = chartData['actual'] ?? const <FlSpot>[];
-    final theoreticalSpots = chartData['theoretical'] ?? const <FlSpot>[];
+    final actualSpots = (chartData['actual'] as List<FlSpot>?) ?? const <FlSpot>[];
+    final theoreticalSpots = (chartData['theoretical'] as List<FlSpot>?) ?? const <FlSpot>[];
+    final dates = (chartData['dates'] as List<DateTime>?) ?? const <DateTime>[];
 
-    // Width like your other charts
-    final chartWidth = max(MediaQuery.of(context).size.width - 64, actualSpots.length * 50.0);
+    if (actualSpots.isEmpty) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(
+            child: Text("Log weight for 2+ days to see a trend."),
+          ),
+        ),
+      );
+    }
+
+    // Width calculation
+    final chartWidth = max(MediaQuery.of(context).size.width - 64, actualSpots.length * 80.0);
 
     // ---- Unified Y scale across both series ----
     double minYData = double.infinity;
@@ -46,7 +60,6 @@ class WeightChartSection extends StatelessWidget {
     _scan(theoreticalSpots);
 
     if (!minYData.isFinite || !maxYData.isFinite) {
-      // Fallback if no data
       minYData = 0;
       maxYData = 1;
     }
@@ -81,59 +94,92 @@ class WeightChartSection extends StatelessWidget {
               controller: scrollController,
               scrollDirection: Axis.horizontal,
               child: SizedBox(
-                height: 220,
+                height: 280, // Increased height to accommodate labels
                 width: chartWidth,
-                child: LineChart(
-                  LineChartData(
-                    minY: minY,
-                    maxY: maxY,
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: actualSpots,
-                        isCurved: true,
-                        color: Theme.of(context).colorScheme.primary,
-                        barWidth: 4,
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 20, bottom: 20, right: 60), // Added padding for labels
+                  child: LineChart(
+                    LineChartData(
+                      minY: minY,
+                      maxY: maxY,
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: actualSpots,
+                          isCurved: true,
+                          color: Theme.of(context).colorScheme.primary,
+                          barWidth: 4,
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                          ),
+                          dotData: FlDotData(
+                            show: true,
+                            getDotPainter: (spot, percent, barData, index) {
+                              return FlDotCirclePainter(
+                                radius: 4,
+                                color: Theme.of(context).colorScheme.primary,
+                                strokeWidth: 2,
+                                strokeColor: Colors.white,
+                              );
+                            },
+                          ),
                         ),
-                      ),
-                      LineChartBarData(
-                        spots: theoreticalSpots,
-                        isCurved: true,
-                        color: Colors.grey,
-                        barWidth: 3,
-                        dotData: const FlDotData(show: false),
-                        dashArray: [5, 5],
-                      ),
-                    ],
-                    titlesData: FlTitlesData(
-                      // Left axis off; use a single graduated right axis
-                      leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 48,
-                          interval: step,
-                          getTitlesWidget: (value, meta) => SizedBox(
-                            width: 48,
-                            child: Text(
-                              NumberFormat.decimalPattern().format(value),
-                              textAlign: TextAlign.center, // centered
-                              style: Theme.of(context).textTheme.bodySmall,
+                        if (theoreticalSpots.isNotEmpty)
+                          LineChartBarData(
+                            spots: theoreticalSpots,
+                            isCurved: true,
+                            color: Colors.grey,
+                            barWidth: 3,
+                            dotData: const FlDotData(show: false),
+                            dashArray: [5, 5],
+                          ),
+                      ],
+                      titlesData: FlTitlesData(
+                        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 55, // Increased reserved space
+                            interval: step,
+                            getTitlesWidget: (value, meta) => Padding(
+                              padding: const EdgeInsets.only(left: 8.0),
+                              child: Text(
+                                "${value.toStringAsFixed(1)} lb",
+                                textAlign: TextAlign.left,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ),
                           ),
                         ),
+                        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 40, // Increased reserved space
+                            interval: max(1.0, (dates.length / 8).ceil().toDouble()), // Show ~8 labels max
+                            getTitlesWidget: (value, meta) {
+                              final index = value.toInt();
+                              if (index < 0 || index >= dates.length) return const Text('');
+
+                              final date = dates[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Text(
+                                  DateFormat('M/d').format(date),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
-                      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: step,
+                      ),
+                      borderData: FlBorderData(show: false),
                     ),
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      horizontalInterval: step,
-                    ),
-                    borderData: FlBorderData(show: false),
                   ),
                 ),
               ),

@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/services/firebase_service.dart';
-import 'package:zeno/src/widgets/app_menu_button.dart'; // <-- added
+import 'package:zeno/src/widgets/app_menu_button.dart';
 
 class LogFoodScreen extends StatefulWidget {
-  const LogFoodScreen({super.key});
+  final Function(int)? onNavigateToTab;
+
+  const LogFoodScreen({super.key, this.onNavigateToTab});
 
   @override
   State<LogFoodScreen> createState() => _LogFoodScreenState();
@@ -167,7 +169,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Today\'s Log (${DateFormat.yMMMd().format(DateTime.now())})'),
-        actions: const [AppMenuButton()], // <-- added
+        actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
       ),
       body: StreamBuilder<List<FoodLog>>(
         stream: _firebaseService.foodLogStream,

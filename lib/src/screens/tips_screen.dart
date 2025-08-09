@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:zeno/src/models/recipe.dart';
 import 'package:zeno/src/models/tip.dart';
 import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/widgets/app_menu_button.dart';
 
 class TipsScreen extends StatefulWidget {
-  const TipsScreen({super.key});
+  final Function(int)? onNavigateToTab;
+
+  const TipsScreen({super.key, this.onNavigateToTab});
 
   @override
   State<TipsScreen> createState() => _TipsScreenState();
@@ -76,7 +79,7 @@ class _TipsScreenState extends State<TipsScreen> {
             title: const Text('Add a New Recipe'),
             content: Form(
               key: formKey,
-              child: SingleChildScrollView( // To prevent overflow
+              child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -128,6 +131,7 @@ class _TipsScreenState extends State<TipsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Tips & Recipes"),
+        actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
@@ -173,7 +177,7 @@ class _TipsScreenState extends State<TipsScreen> {
         }
         final tips = snapshot.data!;
         return SizedBox(
-          height: 200, // Define a fixed height for the carousel
+          height: 200,
           child: PageView.builder(
             itemCount: tips.length,
             itemBuilder: (context, index) {
@@ -213,7 +217,7 @@ class _TipsScreenState extends State<TipsScreen> {
         }
         final recipes = snapshot.data!;
         return SizedBox(
-          height: 300, // Taller carousel for recipes
+          height: 300,
           child: PageView.builder(
             itemCount: recipes.length,
             itemBuilder: (context, index) {
