@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:zeno/src/models/activity_log.dart';
@@ -56,6 +57,130 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return DateTime(l.year, l.month, l.day);
   }
 
+  // Add Food Dialog
+  Future<void> _showAddEditFoodDialog({FoodLog? foodLog, DateTime? forDate}) async {
+    final nameController = TextEditingController(text: foodLog?.name);
+    final caloriesController = TextEditingController(text: foodLog?.calories.toString());
+    final formKey = GlobalKey<FormState>();
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(foodLog == null ? 'Add Food Entry' : 'Edit Food Entry'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Food Name'),
+                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
+                ),
+                TextFormField(
+                  controller: caloriesController,
+                  decoration: const InputDecoration(labelText: 'Calories (kcal)'),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              child: const Text('Save'),
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  final logToSave = FoodLog(
+                    id: foodLog?.id ?? '',
+                    name: nameController.text,
+                    calories: int.parse(caloriesController.text),
+                    date: foodLog?.date ?? forDate ?? DateTime.now(),
+                  );
+
+                  if (foodLog != null) {
+                    _firebaseService.updateFoodLog(logToSave);
+                  } else {
+                    _firebaseService.addFoodLog(logToSave);
+                  }
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Add Activity Dialog
+  Future<void> _showAddEditActivityDialog({ActivityLog? activityLog, DateTime? forDate}) async {
+    final nameController = TextEditingController(text: activityLog?.name);
+    final caloriesController = TextEditingController(text: activityLog?.caloriesBurned.toString());
+    final formKey = GlobalKey<FormState>();
+
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(activityLog == null ? 'Add Activity Entry' : 'Edit Activity Entry'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Activity Name'),
+                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
+                ),
+                TextFormField(
+                  controller: caloriesController,
+                  decoration: const InputDecoration(labelText: 'Calories Burned'),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              child: const Text('Save'),
+              onPressed: () {
+                if (formKey.currentState!.validate()) {
+                  final logToSave = ActivityLog(
+                    id: activityLog?.id ?? '',
+                    name: nameController.text,
+                    caloriesBurned: int.parse(caloriesController.text),
+                    date: activityLog?.date ?? forDate ?? DateTime.now(),
+                  );
+                  if (activityLog != null) {
+                    _firebaseService.updateActivityLog(logToSave);
+                  } else {
+                    _firebaseService.addActivityLog(logToSave);
+                  }
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Enhanced Daily Details Dialog with item management
   Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
     final day = _asLocalDate(stat.date);
     final foodForDay = allFood.where((log) => _asLocalDate(log.date) == day).toList();
@@ -65,7 +190,16 @@ class _ProgressScreenState extends State<ProgressScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text("Details for ${DateFormat('MMMM d').format(day)}"),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("Details for ${DateFormat('MMMM d').format(day)}"),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
+          ),
           content: SizedBox(
             width: double.maxFinite,
             child: SingleChildScrollView(
@@ -73,27 +207,142 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Food Intake", style: Theme.of(context).textTheme.titleMedium),
-                  const Divider(),
-                  if (foodForDay.isEmpty) const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
-                    child: Text("No food logged for this day."),
+                  // Food Section
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("Food Intake", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.add, color: Colors.green),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _showAddEditFoodDialog(forDate: day);
+                        },
+                        tooltip: 'Add Food',
+                      ),
+                    ],
                   ),
-                  ...foodForDay.map((log) => ListTile(
-                    title: Text(log.name),
-                    trailing: Text("${log.calories} kcal"),
-                  )),
+                  const Divider(),
+                  if (foodForDay.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text("No food logged for this day."),
+                    )
+                  else
+                    ...foodForDay.map((log) => Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: ListTile(
+                        title: Text(log.name),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text("${log.calories} kcal"),
+                            PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  Navigator.of(context).pop();
+                                  _showAddEditFoodDialog(foodLog: log);
+                                } else if (value == 'delete') {
+                                  _firebaseService.deleteFoodLog(log.id);
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit, size: 20),
+                                      SizedBox(width: 8),
+                                      Text('Edit'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, size: 20, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Delete', style: TextStyle(color: Colors.red)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    )),
                   const SizedBox(height: 24),
-                  Text("Activities", style: Theme.of(context).textTheme.titleMedium),
-                  const Divider(),
-                  if (activitiesForDay.isEmpty) const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
-                    child: Text("No activities logged for this day."),
+
+                  // Activities Section
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("Activities", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      IconButton(
+                        icon: const Icon(Icons.add, color: Colors.green),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          _showAddEditActivityDialog(forDate: day);
+                        },
+                        tooltip: 'Add Activity',
+                      ),
+                    ],
                   ),
-                  ...activitiesForDay.map((log) => ListTile(
-                    title: Text(log.name),
-                    trailing: Text("${log.caloriesBurned} kcal"),
-                  )),
+                  const Divider(),
+                  if (activitiesForDay.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text("No activities logged for this day."),
+                    )
+                  else
+                    ...activitiesForDay.map((log) => Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: ListTile(
+                        title: Text(log.name),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text("${log.caloriesBurned} kcal", style: TextStyle(color: Colors.green.shade700)),
+                            PopupMenuButton<String>(
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  Navigator.of(context).pop();
+                                  _showAddEditActivityDialog(activityLog: log);
+                                } else if (value == 'delete') {
+                                  _firebaseService.deleteActivityLog(log.id);
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit, size: 20),
+                                      SizedBox(width: 8),
+                                      Text('Edit'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, size: 20, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Delete', style: TextStyle(color: Colors.red)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    )),
                 ],
               ),
             ),
@@ -260,13 +509,20 @@ class _ProgressScreenState extends State<ProgressScreen> {
       }
     }
 
+    // Fixed calculation to match weight trend graph
     dailyStatsMap.forEach((date, stat) {
-      final netCalorieIntake = stat.caloriesIn - (baseBurn + stat.caloriesOut);
+      // stat.caloriesOut is just activity calories burned
+      // Total calories out = base burn + activity calories
+      final totalCaloriesOut = baseBurn + stat.caloriesOut;
+
+      // Net calorie intake after all burns
+      final netCalorieIntake = stat.caloriesIn - totalCaloriesOut;
+
       dailyStatsMap[date] = DailyStat(
         date: date,
         caloriesIn: stat.caloriesIn,
-        caloriesOut: stat.caloriesOut,
-        differenceFromGoal: (stat.caloriesIn - stat.caloriesOut) - dailyCalorieTarget,
+        caloriesOut: stat.caloriesOut, // Keep as activity calories only
+        differenceFromGoal: stat.caloriesIn - stat.caloriesOut - dailyCalorieTarget,
         theoreticalGainLoss: netCalorieIntake / caloriesPerPound,
       );
     });
