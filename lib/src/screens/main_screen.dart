@@ -4,6 +4,7 @@ import 'package:zeno/src/screens/log_activity_screen.dart';
 import 'package:zeno/src/screens/log_food_screen.dart';
 import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/screens/tips_screen.dart';
+import 'package:zeno/src/screens/calculator_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialIndex;
@@ -54,6 +55,7 @@ class _MainScreenState extends State<MainScreen> {
       LogActivityScreen(onNavigateToTab: _navigateToTab),
       ProgressScreen(onNavigateToTab: _navigateToTab),
       TipsScreen(onNavigateToTab: _navigateToTab),
+      CalculatorScreen(onNavigateToTab: _navigateToTab),
     ];
 
     return Scaffold(
@@ -66,12 +68,17 @@ class _MainScreenState extends State<MainScreen> {
         currentIndex: _currentIndex,
         onTap: _onItemTapped,
         type: BottomNavigationBarType.fixed,
+        selectedItemColor: Theme.of(context).colorScheme.primary,
+        unselectedItemColor: Colors.grey,
+        selectedFontSize: 12,
+        unselectedFontSize: 10,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.restaurant), label: 'Food'),
           BottomNavigationBarItem(icon: Icon(Icons.fitness_center), label: 'Activity'),
           BottomNavigationBarItem(icon: Icon(Icons.timeline), label: 'Progress'),
           BottomNavigationBarItem(icon: Icon(Icons.lightbulb_outline), label: 'Tips'),
+          BottomNavigationBarItem(icon: Icon(Icons.calculate), label: 'Calculator'),
         ],
       ),
     );
