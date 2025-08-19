@@ -201,14 +201,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   // Enhanced Daily Details Dialog with item management
-  Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat,
-      List<FoodLog> allFood, List<ActivityLog> allActivities) {
+  // Enhanced Daily Details Dialog without menu dots
+  Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
     final day = _asLocalDate(stat.date);
-    final foodForDay = allFood
-        .where((log) => _asLocalDate(log.date) == day)
-        .toList();
-    final activitiesForDay = allActivities.where((log) =>
-    _asLocalDate(log.date) == day).toList();
+    final foodForDay = allFood.where((log) => _asLocalDate(log.date) == day).toList();
+    final activitiesForDay = allActivities.where((log) => _asLocalDate(log.date) == day).toList();
 
     return showDialog(
       context: context,
@@ -235,11 +232,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Food Intake", style: Theme
-                          .of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text("Food Intake", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.add, color: Colors.green),
                         onPressed: () {
@@ -257,66 +250,45 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       child: Text("No food logged for this day."),
                     )
                   else
-                    ...foodForDay.map((log) =>
-                        Card(
-                          margin: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: ListTile(
-                            title: Text(log.name),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text("${log.calories} kcal"),
-                                PopupMenuButton<String>(
-                                  onSelected: (value) {
-                                    if (value == 'edit') {
-                                      Navigator.of(context).pop();
-                                      _showAddEditFoodDialog(foodLog: log);
-                                    } else if (value == 'delete') {
-                                      _firebaseService.deleteFoodLog(log.id);
-                                      Navigator.of(context).pop();
-                                    }
-                                  },
-                                  itemBuilder: (context) =>
-                                  [
-                                    const PopupMenuItem(
-                                      value: 'edit',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.edit, size: 20),
-                                          SizedBox(width: 8),
-                                          Text('Edit'),
-                                        ],
-                                      ),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.delete, size: 20,
-                                              color: Colors.red),
-                                          SizedBox(width: 8),
-                                          Text('Delete', style: TextStyle(
-                                              color: Colors.red)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                    ...foodForDay.map((log) => Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: ListTile(
+                        title: Text(log.name),
+                        subtitle: log.quantity > 1
+                            ? Text('${log.calories} kcal × ${log.quantity}')
+                            : null,
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (log.quantity > 1) ...[
+                              Text(
+                                '${log.totalCalories} kcal',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
                                 ),
-                              ],
-                            ),
-                          ),
-                        )),
+                              ),
+                              Text(
+                                'qty: ${log.quantity}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ] else ...[
+                              Text("${log.calories} kcal"),
+                            ],
+                          ],
+                        ),
+                        // Removed the PopupMenuButton entirely
+                      ),
+                    )),
                   const SizedBox(height: 24),
 
                   // Activities Section
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Activities", style: Theme
-                          .of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text("Activities", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.add, color: Colors.green),
                         onPressed: () {
@@ -334,59 +306,39 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       child: Text("No activities logged for this day."),
                     )
                   else
-                    ...activitiesForDay.map((log) =>
-                        Card(
-                          margin: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: ListTile(
-                            title: Text(log.name),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text("${log.caloriesBurned} kcal",
-                                    style: TextStyle(
-                                        color: Colors.green.shade700)),
-                                PopupMenuButton<String>(
-                                  onSelected: (value) {
-                                    if (value == 'edit') {
-                                      Navigator.of(context).pop();
-                                      _showAddEditActivityDialog(
-                                          activityLog: log);
-                                    } else if (value == 'delete') {
-                                      _firebaseService.deleteActivityLog(
-                                          log.id);
-                                      Navigator.of(context).pop();
-                                    }
-                                  },
-                                  itemBuilder: (context) =>
-                                  [
-                                    const PopupMenuItem(
-                                      value: 'edit',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.edit, size: 20),
-                                          SizedBox(width: 8),
-                                          Text('Edit'),
-                                        ],
-                                      ),
-                                    ),
-                                    const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.delete, size: 20,
-                                              color: Colors.red),
-                                          SizedBox(width: 8),
-                                          Text('Delete', style: TextStyle(
-                                              color: Colors.red)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
+                    ...activitiesForDay.map((log) => Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4.0),
+                      child: ListTile(
+                        title: Text(log.name),
+                        subtitle: log.quantity > 1
+                            ? Text('${log.caloriesBurned} kcal × ${log.quantity}')
+                            : null,
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (log.quantity > 1) ...[
+                              Text(
+                                '${log.totalCaloriesBurned} kcal',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade700,
                                 ),
-                              ],
-                            ),
-                          ),
-                        )),
+                              ),
+                              Text(
+                                'qty: ${log.quantity}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ] else ...[
+                              Text("${log.caloriesBurned} kcal", style: TextStyle(color: Colors.green.shade700)),
+                            ],
+                          ],
+                        ),
+                        // Removed the PopupMenuButton entirely
+                      ),
+                    )),
                 ],
               ),
             ),
