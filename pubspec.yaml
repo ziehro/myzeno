@@ -1,5 +1,5 @@
 name: zeno
-description: "A calorie tracking app for finding your balance."
+description: "A freemium calorie tracking app for finding your balance."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -11,10 +11,18 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_native_splash: ^2.4.0
-  # Firebase Packages
+
+  # Firebase Packages (for Premium users and auth)
   firebase_core: ^3.1.1
   firebase_auth: ^5.1.1
   cloud_firestore: ^5.0.2
+
+  # Local Storage (for Free users)
+  sqflite: ^2.3.0
+  path: ^1.8.3
+
+  # In-App Purchases (for subscription management)
+  in_app_purchase: ^3.1.11
 
   # Charting Library
   fl_chart: ^0.68.0
@@ -25,12 +33,13 @@ dependencies:
   # For date formatting
   intl: ^0.19.0
 
+  # UI Icons
   cupertino_icons: ^1.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_launcher_icons: ^0.13.1 # Add this line
+  flutter_launcher_icons: ^0.13.1
   flutter_lints: ^3.0.0
 
 flutter:
@@ -39,11 +48,11 @@ flutter:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icon.png" # Path to your new icon
-  
+  image_path: "assets/icon.png"
+
 flutter_native_splash:
-  color: "#F7F9F9"  # Your app's light background color
-  image: assets/icon.png # Path to your new icon
+  color: "#F7F9F9"
+  image: assets/icon.png
   android_12:
     color: "#F7F9F9"
     image: assets/icon.png

@@ -6,8 +6,11 @@ import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/screens/goal_setting_screen.dart';
-import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/services/hybrid_data_service.dart';     // ← NEW FILE
+import 'package:zeno/src/services/subscription_service.dart';   // ← NEW FILE
 import 'package:zeno/src/widgets/app_menu_button.dart';
+import 'package:zeno/src/widgets/paywall_widget.dart';          // ← NEW FILE
+import 'package:zeno/main.dart'; // For ServiceProvider
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
@@ -19,7 +22,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final FirebaseService _firebaseService = FirebaseService();
+  late final HybridDataService _dataService;
+  late final SubscriptionService _subscriptionService;
 
   UserProfile? _userProfile;
   UserGoal? _userGoal;
@@ -28,6 +32,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final serviceProvider = ServiceProvider.of(context);
+    _dataService = serviceProvider.hybridDataService;
+    _subscriptionService = serviceProvider.subscriptionService;
     _loadInitialData();
   }
 
@@ -37,8 +49,8 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _isLoading = true);
     }
 
-    final profile = await _firebaseService.getUserProfile();
-    final goal = await _firebaseService.getUserGoal();
+    final profile = await _dataService.getUserProfile();
+    final goal = await _dataService.getUserGoal();
 
     if (mounted) {
       setState(() {
@@ -80,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (formKey.currentState!.validate()) {
                   final newWeight = double.parse(weightController.text);
                   final newLog = WeightLog(id: '', date: DateTime.now(), weight: newWeight);
-                  _firebaseService.addWeightLog(newLog);
+                  _dataService.addWeightLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
@@ -107,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Text('Sign Out'),
               onPressed: () {
                 Navigator.of(context).pop();
-                _firebaseService.signOut();
+                _dataService.signOut();
               },
             ),
           ],
@@ -148,8 +160,54 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MyZeno'),
+        title: Row(
+          children: [
+            const Text('MyZeno'),
+            if (_subscriptionService.isFree) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'FREE',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+            ],
+            if (_subscriptionService.isPremium) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.amber,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'PREMIUM',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
+          if (_subscriptionService.isFree)
+            IconButton(
+              onPressed: () => _showUpgradeDialog(),
+              icon: const Icon(Icons.star_outline),
+              tooltip: 'Upgrade to Premium',
+            ),
           AppMenuButton(
             onEditProfileAndGoal: _handleEditProfileAndGoal,
             onSignOut: _showSignOutConfirmationDialog,
@@ -162,11 +220,75 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
+            // Show upgrade banner for free users
+            if (_subscriptionService.isFree) _buildUpgradeBanner(),
             _buildCalorieDashboard(),
             const SizedBox(height: 24),
             _buildWeightDashboard(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildUpgradeBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.amber.shade400, Colors.orange.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.amber.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.star, color: Colors.white, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Unlock Premium Features',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const Text(
+                  'Cloud sync, advanced charts, tips & more',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: _showUpgradeDialog,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+            child: const Text('Upgrade', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
@@ -184,18 +306,16 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Text("Today's Balance", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
-            // OPTIMIZED: Use today-only streams instead of full streams
             StreamBuilder<List<FoodLog>>(
-              stream: _firebaseService.todaysFoodLogStream,
+              stream: _dataService.todaysFoodLogStream,
               builder: (context, foodSnapshot) {
                 return StreamBuilder<List<ActivityLog>>(
-                  stream: _firebaseService.todaysActivityLogStream,
+                  stream: _dataService.todaysActivityLogStream,
                   builder: (context, activitySnapshot) {
                     if (foodSnapshot.connectionState == ConnectionState.waiting || activitySnapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
 
-                    // No need to filter by date since streams already provide today's data
                     final caloriesConsumed = (foodSnapshot.data ?? [])
                         .fold(0, (sum, item) => sum + item.totalCalories);
 
@@ -255,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildWeightDashboard() {
     return StreamBuilder<List<WeightLog>>(
-      stream: _firebaseService.weightLogStream,
+      stream: _dataService.weightLogStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
@@ -277,13 +397,35 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Weight Progress", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Weight Progress", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                    if (_subscriptionService.isFree && weightLogs.length >= 45)
+                      IconButton(
+                        onPressed: _showUpgradeDialog,
+                        icon: Icon(Icons.lock_outline, color: Colors.amber.shade600),
+                        tooltip: 'Upgrade for unlimited history',
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 _buildInfoRow("Starting Weight:", "${_userProfile!.startWeight.toStringAsFixed(1)} lbs"),
                 _buildInfoRow("Current Weight:", "${currentWeight.toStringAsFixed(1)} lbs"),
                 const Divider(height: 24),
                 _buildInfoRow("Theoretical Loss:", "${theoreticalLoss.toStringAsFixed(1)} lbs"),
                 _buildInfoRow("Actual Loss:", "${actualLoss.toStringAsFixed(1)} lbs", isBold: true, valueColor: Colors.green.shade700),
+                if (_subscriptionService.isFree && weightLogs.length >= 40) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    "📊 Upgrade to Premium for unlimited weight history and detailed charts",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.amber.shade700,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Center(
                   child: ElevatedButton(
@@ -316,6 +458,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => const SubscriptionDialog(),
     );
   }
 }

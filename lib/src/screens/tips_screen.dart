@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:zeno/src/models/recipe.dart';
 import 'package:zeno/src/models/tip.dart';
 import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/services/subscription_service.dart';   // ← NEW FILE
 import 'package:zeno/src/widgets/app_menu_button.dart';
+import 'package:zeno/src/widgets/paywall_widget.dart';          // ← NEW FILE
+import 'package:zeno/main.dart'; // For ServiceProvider
 
 class TipsScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
@@ -14,6 +17,70 @@ class TipsScreen extends StatefulWidget {
 }
 
 class _TipsScreenState extends State<TipsScreen> {
+  late SubscriptionService _subscriptionService;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _subscriptionService = ServiceProvider.of(context).subscriptionService;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const Text("Tips & Recipes"),
+            if (_subscriptionService.isFree) ...[
+              const SizedBox(width: 8),
+              Icon(Icons.lock, size: 16, color: Colors.amber.shade600),
+            ],
+            if (_subscriptionService.isPremium) ...[
+              const SizedBox(width: 8),
+              Icon(Icons.star, size: 16, color: Colors.amber.shade600),
+            ],
+          ],
+        ),
+        actions: [
+          if (_subscriptionService.isFree)
+            IconButton(
+              onPressed: _showUpgradeDialog,
+              icon: const Icon(Icons.star_outline),
+              tooltip: 'Unlock Tips & Recipes',
+            ),
+          AppMenuButton(onNavigateToTab: widget.onNavigateToTab),
+        ],
+      ),
+      body: FeatureGate(
+        feature: 'tips',
+        child: const TipsScreenContent(),
+        fallback: PaywallWidget(
+          feature: 'tips',
+          customTitle: '💡 Expert Health Tips & Recipes',
+          customDescription: 'Get access to professionally curated health tips and nutritious recipes to accelerate your wellness journey.',
+          child: const TipsScreenContent(),
+        ),
+      ),
+    );
+  }
+
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => const SubscriptionDialog(),
+    );
+  }
+}
+
+class TipsScreenContent extends StatefulWidget {
+  const TipsScreenContent({super.key});
+
+  @override
+  State<TipsScreenContent> createState() => _TipsScreenContentState();
+}
+
+class _TipsScreenContentState extends State<TipsScreenContent> {
   final FirebaseService _firebaseService = FirebaseService();
 
   Future<void> _showAddTipDialog() async {
@@ -128,23 +195,59 @@ class _TipsScreenState extends State<TipsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Tips & Recipes"),
-        actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          _buildSectionHeader("Health & Wellness Tips", _showAddTipDialog),
-          _buildTipsCarousel(),
-          const SizedBox(height: 24),
-          const Divider(),
-          const SizedBox(height: 16),
-          _buildSectionHeader("Healthy Recipes", _showAddRecipeDialog),
-          _buildRecipesCarousel(),
-        ],
-      ),
+    return ListView(
+      padding: const EdgeInsets.all(16.0),
+      children: [
+        // Premium badge
+        Container(
+          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.amber.shade400, Colors.orange.shade400],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.star, color: Colors.white, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Premium Content',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const Text(
+                      'Curated by nutrition experts and fitness professionals',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        _buildSectionHeader("Health & Wellness Tips", _showAddTipDialog),
+        _buildTipsCarousel(),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 16),
+        _buildSectionHeader("Healthy Recipes", _showAddRecipeDialog),
+        _buildRecipesCarousel(),
+      ],
     );
   }
 
@@ -186,15 +289,46 @@ class _TipsScreenState extends State<TipsScreen> {
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 elevation: 4,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(tip.title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Expanded(child: SingleChildScrollView(child: Text(tip.content, style: Theme.of(context).textTheme.bodyMedium))),
-                    ],
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.blue.shade50,
+                        Colors.green.shade50,
+                      ],
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.lightbulb, color: Colors.amber.shade600, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                tip.title,
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Text(
+                              tip.content,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -226,20 +360,44 @@ class _TipsScreenState extends State<TipsScreen> {
                 margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 elevation: 4,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(recipe.name, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
-                        Text("Ingredients:", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                        Text(recipe.ingredients),
-                        const Divider(height: 20),
-                        Text("Instructions:", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                        Text(recipe.instructions),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.orange.shade50,
+                        Colors.red.shade50,
                       ],
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.restaurant_menu, color: Colors.orange.shade600, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  recipe.name,
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text("Ingredients:", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(recipe.ingredients),
+                          const Divider(height: 20),
+                          Text("Instructions:", style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(recipe.instructions),
+                        ],
+                      ),
                     ),
                   ),
                 ),
