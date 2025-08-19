@@ -6,11 +6,8 @@ import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/screens/goal_setting_screen.dart';
-import 'package:zeno/src/services/hybrid_data_service.dart';     // ← NEW FILE
-import 'package:zeno/src/services/subscription_service.dart';   // ← NEW FILE
+import 'package:zeno/src/services/firebase_service.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart';
-import 'package:zeno/src/widgets/paywall_widget.dart';          // ← NEW FILE
-import 'package:zeno/main.dart'; // For ServiceProvider
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
@@ -22,42 +19,96 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final HybridDataService _dataService;
-  late final SubscriptionService _subscriptionService;
-
-  UserProfile? _userProfile;
-  UserGoal? _userGoal;
-  bool _isLoading = true;
+  final FirebaseService _firebaseService = FirebaseService();
 
   @override
-  void initState() {
-    super.initState();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('MyZeno'),
+        actions: [
+          AppMenuButton(
+            onEditProfileAndGoal: _handleEditProfileAndGoal,
+            onSignOut: _showSignOutConfirmationDialog,
+            onNavigateToTab: widget.onNavigateToTab,
+          ),
+        ],
+      ),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _loadUserData(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
+                  const SizedBox(height: 16),
+                  Text('Error loading data: ${snapshot.error}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}), // Retry
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final data = snapshot.data;
+          if (data == null || data['profile'] == null || data['goal'] == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.person_add_outlined, size: 64, color: Colors.grey.shade400),
+                  const SizedBox(height: 16),
+                  const Text('Profile not found. Please set up your profile.'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _handleEditProfileAndGoal,
+                    child: const Text('Set Up Profile'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final UserProfile userProfile = data['profile'];
+          final UserGoal userGoal = data['goal'];
+
+          return RefreshIndicator(
+            onRefresh: () async => setState(() {}),
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                _buildCalorieDashboard(userProfile, userGoal),
+                const SizedBox(height: 24),
+                _buildWeightDashboard(userProfile),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final serviceProvider = ServiceProvider.of(context);
-    _dataService = serviceProvider.hybridDataService;
-    _subscriptionService = serviceProvider.subscriptionService;
-    _loadInitialData();
-  }
+  Future<Map<String, dynamic>> _loadUserData() async {
+    try {
+      final profile = await _firebaseService.getUserProfile();
+      final goal = await _firebaseService.getUserGoal();
 
-  Future<void> _loadInitialData() async {
-    if (!mounted) return;
-    if (!_isLoading) {
-      setState(() => _isLoading = true);
-    }
-
-    final profile = await _dataService.getUserProfile();
-    final goal = await _dataService.getUserGoal();
-
-    if (mounted) {
-      setState(() {
-        _userProfile = profile;
-        _userGoal = goal;
-        _isLoading = false;
-      });
+      return {
+        'profile': profile,
+        'goal': goal,
+      };
+    } catch (e) {
+      print('Error loading user data: $e');
+      rethrow;
     }
   }
 
@@ -92,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (formKey.currentState!.validate()) {
                   final newWeight = double.parse(weightController.text);
                   final newLog = WeightLog(id: '', date: DateTime.now(), weight: newWeight);
-                  _dataService.addWeightLog(newLog);
+                  _firebaseService.addWeightLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
@@ -119,7 +170,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Text('Sign Out'),
               onPressed: () {
                 Navigator.of(context).pop();
-                _dataService.signOut();
+                _firebaseService.signOut();
               },
             ),
           ],
@@ -130,171 +181,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _handleEditProfileAndGoal() {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (context) => GoalSettingScreen(
-        userProfile: _userProfile,
-        userGoal: _userGoal,
-      ),
-    )).then((_) => _loadInitialData());
+      builder: (context) => const GoalSettingScreen(),
+    )).then((_) => setState(() {})); // Refresh after returning
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (_userProfile == null || _userGoal == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Error')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Could not load user data.'),
-              ElevatedButton(onPressed: _loadInitialData, child: const Text('Retry')),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            const Text('MyZeno'),
-            if (_subscriptionService.isFree) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'FREE',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ),
-            ],
-            if (_subscriptionService.isPremium) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.amber,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'PREMIUM',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          if (_subscriptionService.isFree)
-            IconButton(
-              onPressed: () => _showUpgradeDialog(),
-              icon: const Icon(Icons.star_outline),
-              tooltip: 'Upgrade to Premium',
-            ),
-          AppMenuButton(
-            onEditProfileAndGoal: _handleEditProfileAndGoal,
-            onSignOut: _showSignOutConfirmationDialog,
-            onNavigateToTab: widget.onNavigateToTab,
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadInitialData,
-        child: ListView(
-          padding: const EdgeInsets.all(16.0),
-          children: [
-            // Show upgrade banner for free users
-            if (_subscriptionService.isFree) _buildUpgradeBanner(),
-            _buildCalorieDashboard(),
-            const SizedBox(height: 24),
-            _buildWeightDashboard(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUpgradeBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.amber.shade400, Colors.orange.shade400],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.amber.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.star, color: Colors.white, size: 24),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Unlock Premium Features',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const Text(
-                  'Cloud sync, advanced charts, tips & more',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton(
-            onPressed: _showUpgradeDialog,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.orange,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-            child: const Text('Upgrade', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCalorieDashboard() {
-    final calorieTarget = _userProfile!.recommendedDailyIntake - _userGoal!.dailyCalorieDeficitTarget;
+  Widget _buildCalorieDashboard(UserProfile userProfile, UserGoal userGoal) {
+    final calorieTarget = userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget;
 
     return Card(
       elevation: 2,
@@ -307,12 +199,13 @@ class _HomeScreenState extends State<HomeScreen> {
             Text("Today's Balance", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             StreamBuilder<List<FoodLog>>(
-              stream: _dataService.todaysFoodLogStream,
+              stream: _firebaseService.todaysFoodLogStream,
               builder: (context, foodSnapshot) {
                 return StreamBuilder<List<ActivityLog>>(
-                  stream: _dataService.todaysActivityLogStream,
+                  stream: _firebaseService.todaysActivityLogStream,
                   builder: (context, activitySnapshot) {
-                    if (foodSnapshot.connectionState == ConnectionState.waiting || activitySnapshot.connectionState == ConnectionState.waiting) {
+                    if (foodSnapshot.connectionState == ConnectionState.waiting ||
+                        activitySnapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
 
@@ -373,69 +266,59 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildWeightDashboard() {
+  Widget _buildWeightDashboard(UserProfile userProfile) {
     return StreamBuilder<List<WeightLog>>(
-      stream: _dataService.weightLogStream,
+      stream: _firebaseService.weightLogStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
         }
 
         final weightLogs = snapshot.data ?? [];
-        final currentWeight = weightLogs.isNotEmpty ? weightLogs.first.weight : _userProfile!.startWeight;
-        final actualLoss = _userProfile!.startWeight - currentWeight;
+        final currentWeight = weightLogs.isNotEmpty ? weightLogs.first.weight : userProfile.startWeight;
+        final actualLoss = userProfile.startWeight - currentWeight;
 
-        final int daysPassed = DateTime.now().difference(_userProfile!.createdAt).inDays;
-        final double lbsPerDay = _userGoal!.days > 0 ? _userGoal!.lbsToLose / _userGoal!.days : 0;
-        final double theoreticalLoss = (daysPassed * lbsPerDay) > 0 ? (daysPassed * lbsPerDay) : 0;
+        final int daysPassed = DateTime.now().difference(userProfile.createdAt).inDays;
 
-        return Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        // Load goal data for theoretical calculation
+        return FutureBuilder<UserGoal?>(
+          future: _firebaseService.getUserGoal(),
+          builder: (context, goalSnapshot) {
+            if (!goalSnapshot.hasData) {
+              return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
+            }
+
+            final userGoal = goalSnapshot.data!;
+            final double lbsPerDay = userGoal.days > 0 ? userGoal.lbsToLose / userGoal.days : 0;
+            final double theoreticalLoss = (daysPassed * lbsPerDay) > 0 ? (daysPassed * lbsPerDay) : 0;
+
+            return Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("Weight Progress", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                    if (_subscriptionService.isFree && weightLogs.length >= 45)
-                      IconButton(
-                        onPressed: _showUpgradeDialog,
-                        icon: Icon(Icons.lock_outline, color: Colors.amber.shade600),
-                        tooltip: 'Upgrade for unlimited history',
+                    const SizedBox(height: 16),
+                    _buildInfoRow("Starting Weight:", "${userProfile.startWeight.toStringAsFixed(1)} lbs"),
+                    _buildInfoRow("Current Weight:", "${currentWeight.toStringAsFixed(1)} lbs"),
+                    const Divider(height: 24),
+                    _buildInfoRow("Theoretical Loss:", "${theoreticalLoss.toStringAsFixed(1)} lbs"),
+                    _buildInfoRow("Actual Loss:", "${actualLoss.toStringAsFixed(1)} lbs", isBold: true, valueColor: Colors.green.shade700),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: ElevatedButton(
+                        onPressed: _showLogWeightDialog,
+                        child: const Text("Log Today's Weight"),
                       ),
+                    )
                   ],
                 ),
-                const SizedBox(height: 16),
-                _buildInfoRow("Starting Weight:", "${_userProfile!.startWeight.toStringAsFixed(1)} lbs"),
-                _buildInfoRow("Current Weight:", "${currentWeight.toStringAsFixed(1)} lbs"),
-                const Divider(height: 24),
-                _buildInfoRow("Theoretical Loss:", "${theoreticalLoss.toStringAsFixed(1)} lbs"),
-                _buildInfoRow("Actual Loss:", "${actualLoss.toStringAsFixed(1)} lbs", isBold: true, valueColor: Colors.green.shade700),
-                if (_subscriptionService.isFree && weightLogs.length >= 40) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    "📊 Upgrade to Premium for unlimited weight history and detailed charts",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.amber.shade700,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                Center(
-                  child: ElevatedButton(
-                    onPressed: _showLogWeightDialog,
-                    child: const Text("Log Today's Weight"),
-                  ),
-                )
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -458,13 +341,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  void _showUpgradeDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => const SubscriptionDialog(),
     );
   }
 }

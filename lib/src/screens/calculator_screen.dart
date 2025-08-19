@@ -40,6 +40,198 @@ class _CalculatorScreenState extends State<CalculatorScreen> with TickerProvider
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const Text('Calculators'),
+            if (_subscriptionService.isFree) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade600,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'LIMITED',
+                  style: TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          if (_subscriptionService.isFree)
+            IconButton(
+              onPressed: _showUpgradeDialog,
+              icon: const Icon(Icons.star_outline),
+              tooltip: 'Unlock All Calculators',
+            ),
+          AppMenuButton(onNavigateToTab: widget.onNavigateToTab),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(
+              icon: const Icon(Icons.restaurant),
+              text: 'Food',
+            ),
+            Tab(
+              icon: const Icon(Icons.fitness_center),
+              text: 'Activity',
+            ),
+            Tab(
+              icon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.calculate),
+                  if (_subscriptionService.isFree) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.lock, size: 14, color: Colors.amber.shade600),
+                  ],
+                ],
+              ),
+              text: 'Others',
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // Food calculators - Basic access for free users
+          _buildFoodCalculatorsTab(),
+
+          // Activity calculators - Basic access for free users
+          _buildActivityCalculatorsTab(),
+
+          // Other calculators - Premium only
+          FeatureGate(
+            feature: 'advanced_calculators',
+            child: const OtherCalculatorTab(),
+            fallback: PaywallWidget(
+              feature: 'advanced_calculators',
+              customTitle: 'Advanced Calculators',
+              customDescription: 'Unlock BMR, BMI, Alcohol, and Water intake calculators with detailed analysis and recommendations.',
+              child: const OtherCalculatorTab(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFoodCalculatorsTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          if (_subscriptionService.isFree) _buildLimitedAccessBanner('food'),
+          const FoodCalculatorTabContent(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityCalculatorsTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          if (_subscriptionService.isFree) _buildLimitedAccessBanner('activity'),
+          const ActivityCalculatorTabContent(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLimitedAccessBanner(String type) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Free Version - Basic Calculator',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  'Upgrade to Premium for advanced ${type} calculators and detailed analysis.',
+                  style: TextStyle(
+                    color: Colors.blue.shade600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _showUpgradeDialog,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            child: Text(
+              'Upgrade',
+              style: TextStyle(
+                color: Colors.blue.shade700,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => const SubscriptionDialog(),
+    );
+  }
+}
+
+// Modified Food Calculator Tab to show only basic calculator for free users
+class FoodCalculatorTabContent extends StatefulWidget {
+  const FoodCalculatorTabContent({super.key});
+
+  @override
+  State<FoodCalculatorTabContent> createState() => _FoodCalculatorTabContentState();
+}
+
+class _FoodCalculatorTabContentState extends State<FoodCalculatorTabContent> {
+  String _selectedCalculator = 'basic';
+  late SubscriptionService _subscriptionService;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _subscriptionService = ServiceProvider.of(context).subscriptionService;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Available calculators based on subscription
     final availableCalculators = _subscriptionService.isPremium
         ? [
@@ -241,215 +433,3 @@ class _ActivityCalculatorTabContentState extends State<ActivityCalculatorTabCont
     );
   }
 }
-return Scaffold(
-appBar: AppBar(
-title: Row(
-children: [
-const Text('Calculators'),
-if (_subscriptionService.isFree) ...[
-const SizedBox(width: 8),
-Container(
-padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-decoration: BoxDecoration(
-color: Colors.amber.shade600,
-borderRadius: BorderRadius.circular(10),
-),
-child: const Text(
-'LIMITED',
-style: TextStyle(
-fontSize: 8,
-fontWeight: FontWeight.bold,
-color: Colors.white,
-),
-),
-),
-],
-],
-),
-actions: [
-if (_subscriptionService.isFree)
-IconButton(
-onPressed: _showUpgradeDialog,
-icon: const Icon(Icons.star_outline),
-tooltip: 'Unlock All Calculators',
-),
-AppMenuButton(onNavigateToTab: widget.onNavigateToTab),
-],
-bottom: TabBar(
-controller: _tabController,
-tabs: [
-Tab(
-icon: const Icon(Icons.restaurant),
-text: 'Food',
-child: _subscriptionService.isFree
-? const Row(
-mainAxisSize: MainAxisSize.min,
-children: [
-Icon(Icons.restaurant),
-SizedBox(width: 4),
-Text('Food'),
-],
-)
-    : null,
-),
-Tab(
-icon: const Icon(Icons.fitness_center),
-text: 'Activity',
-child: _subscriptionService.isFree
-? const Row(
-mainAxisSize: MainAxisSize.min,
-children: [
-Icon(Icons.fitness_center),
-SizedBox(width: 4),
-Text('Activity'),
-],
-)
-    : null,
-),
-Tab(
-icon: Row(
-mainAxisSize: MainAxisSize.min,
-children: [
-const Icon(Icons.calculate),
-if (_subscriptionService.isFree) ...[
-const SizedBox(width: 4),
-Icon(Icons.lock, size: 14, color: Colors.amber.shade600),
-],
-],
-),
-text: 'Others',
-),
-],
-),
-),
-body: TabBarView(
-controller: _tabController,
-children: [
-// Food calculators - Basic access for free users
-_buildFoodCalculatorsTab(),
-
-// Activity calculators - Basic access for free users
-_buildActivityCalculatorsTab(),
-
-// Other calculators - Premium only
-FeatureGate(
-feature: 'advanced_calculators',
-child: const OtherCalculatorTab(),
-fallback: PaywallWidget(
-feature: 'advanced_calculators',
-customTitle: 'Advanced Calculators',
-customDescription: 'Unlock BMR, BMI, Alcohol, and Water intake calculators with detailed analysis and recommendations.',
-child: const OtherCalculatorTab(),
-),
-),
-],
-),
-);
-}
-
-Widget _buildFoodCalculatorsTab() {
-return SingleChildScrollView(
-padding: const EdgeInsets.all(16.0),
-child: Column(
-children: [
-if (_subscriptionService.isFree) _buildLimitedAccessBanner('food'),
-const FoodCalculatorTabContent(),
-],
-),
-);
-}
-
-Widget _buildActivityCalculatorsTab() {
-return SingleChildScrollView(
-padding: const EdgeInsets.all(16.0),
-child: Column(
-children: [
-if (_subscriptionService.isFree) _buildLimitedAccessBanner('activity'),
-const ActivityCalculatorTabContent(),
-],
-),
-);
-}
-
-Widget _buildLimitedAccessBanner(String type) {
-return Container(
-margin: const EdgeInsets.only(bottom: 16),
-padding: const EdgeInsets.all(12),
-decoration: BoxDecoration(
-color: Colors.blue.shade50,
-borderRadius: BorderRadius.circular(8),
-border: Border.all(color: Colors.blue.shade200),
-),
-child: Row(
-children: [
-Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
-const SizedBox(width: 12),
-Expanded(
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-Text(
-'Free Version - Basic Calculator',
-style: TextStyle(
-fontWeight: FontWeight.bold,
-color: Colors.blue.shade700,
-fontSize: 14,
-),
-),
-Text(
-'Upgrade to Premium for advanced ${type} calculators and detailed analysis.',
-style: TextStyle(
-color: Colors.blue.shade600,
-fontSize: 12,
-),
-),
-],
-),
-),
-TextButton(
-onPressed: _showUpgradeDialog,
-style: TextButton.styleFrom(
-padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-),
-child: Text(
-'Upgrade',
-style: TextStyle(
-color: Colors.blue.shade700,
-fontWeight: FontWeight.bold,
-fontSize: 12,
-),
-),
-),
-],
-),
-);
-}
-
-void _showUpgradeDialog() {
-showDialog(
-context: context,
-builder: (context) => const SubscriptionDialog(),
-);
-}
-}
-
-// Modified Food Calculator Tab to show only basic calculator for free users
-class FoodCalculatorTabContent extends StatefulWidget {
-const FoodCalculatorTabContent({super.key});
-
-@override
-State<FoodCalculatorTabContent> createState() => _FoodCalculatorTabContentState();
-}
-
-class _FoodCalculatorTabContentState extends State<FoodCalculatorTabContent> {
-String _selectedCalculator = 'basic';
-late SubscriptionService _subscriptionService;
-
-@override
-void didChangeDependencies() {
-super.didChangeDependencies();
-_subscriptionService = ServiceProvider.of(context).subscriptionService;
-}
-
-@override
-Widget build(BuildContext context) {
