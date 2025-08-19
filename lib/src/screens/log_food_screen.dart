@@ -103,8 +103,9 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
     return showDialog(
       context: context,
       builder: (context) {
+        // OPTIMIZED: Use today's stream only, much faster
         return StreamBuilder<List<FoodLog>>(
-          stream: _firebaseService.foodLogStream,
+          stream: _firebaseService.todaysFoodLogStream,
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
               return const AlertDialog(
@@ -266,7 +267,8 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
         actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
       ),
       body: StreamBuilder<List<FoodLog>>(
-        stream: _firebaseService.foodLogStream,
+        // OPTIMIZED: Use today's data only - much faster!
+        stream: _firebaseService.todaysFoodLogStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -275,17 +277,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
             return const Center(child: Text('No food logged yet today.'));
           }
 
-          final allLogs = snapshot.data!;
-          final today = DateTime.now();
-          final todaysLogs = allLogs.where((log) =>
-          log.date.year == today.year &&
-              log.date.month == today.month &&
-              log.date.day == today.day).toList();
-
-          if (todaysLogs.isEmpty) {
-            return const Center(child: Text('No food logged yet today.'));
-          }
-
+          final todaysLogs = snapshot.data!;
           final totalCalories = todaysLogs.fold(0, (sum, item) => sum + item.totalCalories);
 
           return Column(

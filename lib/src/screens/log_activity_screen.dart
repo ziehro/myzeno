@@ -102,8 +102,9 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
     return showDialog(
       context: context,
       builder: (context) {
+        // OPTIMIZED: Use today's stream only, much faster
         return StreamBuilder<List<ActivityLog>>(
-          stream: _firebaseService.activityLogStream,
+          stream: _firebaseService.todaysActivityLogStream,
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
               return const AlertDialog(
@@ -268,26 +269,17 @@ class _LogActivityScreenState extends State<LogActivityScreen> {
         actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
       ),
       body: StreamBuilder<List<ActivityLog>>(
-        stream: _firebaseService.activityLogStream,
+        // OPTIMIZED: Use today's data only - much faster!
+        stream: _firebaseService.todaysActivityLogStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('No activities logged yet.'));
-          }
-
-          final allLogs = snapshot.data!;
-          final today = DateTime.now();
-          final todaysLogs = allLogs.where((log) =>
-          log.date.year == today.year &&
-              log.date.month == today.month &&
-              log.date.day == today.day).toList();
-
-          if (todaysLogs.isEmpty) {
             return const Center(child: Text('No activities logged yet today.'));
           }
 
+          final todaysLogs = snapshot.data!;
           final totalCaloriesBurned = todaysLogs.fold(0, (sum, item) => sum + item.totalCaloriesBurned);
 
           return Column(

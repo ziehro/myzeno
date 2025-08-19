@@ -6,11 +6,7 @@ import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/screens/goal_setting_screen.dart';
-import 'package:zeno/src/screens/log_activity_screen.dart';
-import 'package:zeno/src/screens/log_food_screen.dart';
-import 'package:zeno/src/screens/progress_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
-import 'package:zeno/src/screens/tips_screen.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -157,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
           AppMenuButton(
             onEditProfileAndGoal: _handleEditProfileAndGoal,
             onSignOut: _showSignOutConfirmationDialog,
-            onNavigateToTab: widget.onNavigateToTab, // Pass the callback
+            onNavigateToTab: widget.onNavigateToTab,
           ),
         ],
       ),
@@ -188,26 +184,22 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Text("Today's Balance", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
+            // OPTIMIZED: Use today-only streams instead of full streams
             StreamBuilder<List<FoodLog>>(
-              stream: _firebaseService.foodLogStream,
+              stream: _firebaseService.todaysFoodLogStream,
               builder: (context, foodSnapshot) {
                 return StreamBuilder<List<ActivityLog>>(
-                  stream: _firebaseService.activityLogStream,
+                  stream: _firebaseService.todaysActivityLogStream,
                   builder: (context, activitySnapshot) {
                     if (foodSnapshot.connectionState == ConnectionState.waiting || activitySnapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
 
-                    final today = DateTime.now();
-                    bool isSameDay(DateTime date) => date.year == today.year && date.month == today.month && date.day == today.day;
-
-                    // Use totalCalories and totalCaloriesBurned for quantity-aware calculations
+                    // No need to filter by date since streams already provide today's data
                     final caloriesConsumed = (foodSnapshot.data ?? [])
-                        .where((log) => isSameDay(log.date))
                         .fold(0, (sum, item) => sum + item.totalCalories);
 
                     final caloriesBurned = (activitySnapshot.data ?? [])
-                        .where((log) => isSameDay(log.date))
                         .fold(0, (sum, item) => sum + item.totalCaloriesBurned);
 
                     final netCalories = caloriesConsumed - caloriesBurned;
@@ -241,7 +233,6 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Use callback instead of navigation
                     widget.onNavigateToTab?.call(1); // Food tab
                   },
                   icon: const Icon(Icons.restaurant_menu),
@@ -249,7 +240,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Use callback instead of navigation
                     widget.onNavigateToTab?.call(2); // Activity tab
                   },
                   icon: const Icon(Icons.fitness_center),

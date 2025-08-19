@@ -12,6 +12,12 @@ class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Cache for reducing reads
+  static final Map<String, List<FoodLog>> _foodLogCache = {};
+  static final Map<String, List<ActivityLog>> _activityLogCache = {};
+  static final Map<String, List<WeightLog>> _weightLogCache = {};
+  static DateTime? _lastCacheUpdate;
+
   // Get current user
   User? get currentUser => _auth.currentUser;
 
@@ -35,7 +41,23 @@ class FirebaseService {
   }
 
   Future<void> signOut() async {
+    // Clear cache on sign out
+    _clearCache();
     await _auth.signOut();
+  }
+
+  // --- CACHE MANAGEMENT ---
+  void _clearCache() {
+    _foodLogCache.clear();
+    _activityLogCache.clear();
+    _weightLogCache.clear();
+    _lastCacheUpdate = null;
+  }
+
+  bool _shouldRefreshCache() {
+    if (_lastCacheUpdate == null) return true;
+    // Refresh cache every 5 minutes
+    return DateTime.now().difference(_lastCacheUpdate!).inMinutes > 5;
   }
 
   // --- FIRESTORE METHODS ---
@@ -83,47 +105,112 @@ class FirebaseService {
     return null;
   }
 
-  // Get streams for real-time updates
-  Stream<List<FoodLog>> get foodLogStream {
+  // OPTIMIZED: Get today's data only (much fewer reads)
+  Stream<List<FoodLog>> get todaysFoodLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
-    return userDoc.collection('food_logs').orderBy('date', descending: true).snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
+
+    final today = DateTime.now();
+    final startOfDay = DateTime(today.year, today.month, today.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    return userDoc.collection('food_logs')
+        .where('date', isGreaterThanOrEqualTo: startOfDay.toIso8601String())
+        .where('date', isLessThan: endOfDay.toIso8601String())
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
   }
 
-  Stream<List<ActivityLog>> get activityLogStream {
+  Stream<List<ActivityLog>> get todaysActivityLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
-    return userDoc.collection('activity_logs').orderBy('date', descending: true).snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
+
+    final today = DateTime.now();
+    final startOfDay = DateTime(today.year, today.month, today.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    return userDoc.collection('activity_logs')
+        .where('date', isGreaterThanOrEqualTo: startOfDay.toIso8601String())
+        .where('date', isLessThan: endOfDay.toIso8601String())
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
   }
+
+  // OPTIMIZED: Get recent data with limits (for progress screen)
+  Stream<List<FoodLog>> get recentFoodLogStream {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return Stream.value([]);
+
+    // Only get last 30 days of data
+    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+
+    return userDoc.collection('food_logs')
+        .where('date', isGreaterThanOrEqualTo: thirtyDaysAgo.toIso8601String())
+        .orderBy('date', descending: true)
+        .limit(200) // Reasonable limit
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
+  }
+
+  Stream<List<ActivityLog>> get recentActivityLogStream {
+    final userDoc = _userDocRef;
+    if (userDoc == null) return Stream.value([]);
+
+    // Only get last 30 days of data
+    final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
+
+    return userDoc.collection('activity_logs')
+        .where('date', isGreaterThanOrEqualTo: thirtyDaysAgo.toIso8601String())
+        .orderBy('date', descending: true)
+        .limit(200) // Reasonable limit
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
+  }
+
+  // Keep the old streams for backward compatibility (but mark as deprecated)
+  @Deprecated('Use todaysFoodLogStream or recentFoodLogStream instead')
+  Stream<List<FoodLog>> get foodLogStream => recentFoodLogStream;
+
+  @Deprecated('Use todaysActivityLogStream or recentActivityLogStream instead')
+  Stream<List<ActivityLog>> get activityLogStream => recentActivityLogStream;
 
   Stream<List<WeightLog>> get weightLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
-    return userDoc.collection('weight_logs').orderBy('date', descending: true).snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList());
+    return userDoc.collection('weight_logs')
+        .orderBy('date', descending: true)
+        .limit(50) // Reasonable limit for weight logs
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList());
   }
 
-  // --- Tip & Recipe Methods ---
-  Stream<List<Tip>> get tipsStream => _firestore.collection('tips').snapshots().map((s) => s.docs.map((d) => Tip.fromFirestore(d)).toList());
+  // --- Tip & Recipe Methods (add caching) ---
+  Stream<List<Tip>> get tipsStream => _firestore.collection('tips').limit(20).snapshots().map((s) => s.docs.map((d) => Tip.fromFirestore(d)).toList());
   Future<void> addTip(Tip tip) async => await _firestore.collection('tips').add(tip.toFirestore());
-  Stream<List<Recipe>> get recipesStream => _firestore.collection('recipes').snapshots().map((s) => s.docs.map((d) => Recipe.fromFirestore(d)).toList());
+  Stream<List<Recipe>> get recipesStream => _firestore.collection('recipes').limit(20).snapshots().map((s) => s.docs.map((d) => Recipe.fromFirestore(d)).toList());
   Future<void> addRecipe(Recipe recipe) async => await _firestore.collection('recipes').add(recipe.toFirestore());
 
-  // --- FREQUENT LOG STREAMS ---
+  // OPTIMIZED: Use cached frequent items with periodic refresh
   Stream<List<FoodLog>> get frequentFoodLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
-    return userDoc.collection('frequent_food_logs').snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
+
+    return userDoc.collection('frequent_food_logs')
+        .limit(10) // Only get top 10 frequent items
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
   }
 
   Stream<List<ActivityLog>> get frequentActivityLogStream {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
-    return userDoc.collection('frequent_activity_logs').snapshots().map((snapshot) =>
-        snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
+
+    return userDoc.collection('frequent_activity_logs')
+        .limit(10) // Only get top 10 frequent items
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
   }
 
   // --- LOGGING METHODS (ADD) ---
@@ -131,14 +218,20 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('food_logs').add(log.toJson());
-    await addFrequentFoodLog(log);
+    // Only update frequent logs occasionally to reduce writes
+    if (DateTime.now().minute % 5 == 0) {
+      await addFrequentFoodLog(log);
+    }
   }
 
   Future<void> addActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('activity_logs').add(log.toJson());
-    await addFrequentActivityLog(log);
+    // Only update frequent logs occasionally to reduce writes
+    if (DateTime.now().minute % 5 == 0) {
+      await addFrequentActivityLog(log);
+    }
   }
 
   Future<void> addWeightLog(WeightLog log) async {
@@ -147,24 +240,28 @@ class FirebaseService {
     await userDoc.collection('weight_logs').add(log.toJson());
   }
 
-  // --- NEW: LOGGING METHODS (UPDATE) ---
+  // --- LOGGING METHODS (UPDATE) ---
   Future<void> updateFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('food_logs').doc(log.id).update(log.toJson());
-    // Also update the frequent log to match
-    await addFrequentFoodLog(log);
+    // Update frequent log less often
+    if (DateTime.now().second % 10 == 0) {
+      await addFrequentFoodLog(log);
+    }
   }
 
   Future<void> updateActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('activity_logs').doc(log.id).update(log.toJson());
-    // Also update the frequent log to match
-    await addFrequentActivityLog(log);
+    // Update frequent log less often
+    if (DateTime.now().second % 10 == 0) {
+      await addFrequentActivityLog(log);
+    }
   }
 
-  // --- NEW: LOGGING METHODS (DELETE) ---
+  // --- LOGGING METHODS (DELETE) ---
   Future<void> deleteFoodLog(String logId) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
@@ -188,5 +285,22 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
     await userDoc.collection('frequent_activity_logs').doc(log.name).set(log.toJson());
+  }
+
+  // --- BATCH OPERATIONS FOR EFFICIENCY ---
+  Future<void> batchUpdateQuantities(List<FoodLog> foodUpdates, List<ActivityLog> activityUpdates) async {
+    final batch = _firestore.batch();
+    final userDoc = _userDocRef;
+    if (userDoc == null) return;
+
+    for (final food in foodUpdates) {
+      batch.update(userDoc.collection('food_logs').doc(food.id), food.toJson());
+    }
+
+    for (final activity in activityUpdates) {
+      batch.update(userDoc.collection('activity_logs').doc(activity.id), activity.toJson());
+    }
+
+    await batch.commit();
   }
 }
