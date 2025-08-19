@@ -20,6 +20,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
   Future<void> _showAddEditFoodDialog({FoodLog? foodLog}) async {
     final nameController = TextEditingController(text: foodLog?.name);
     final caloriesController = TextEditingController(text: foodLog?.calories.toString());
+    final quantityController = TextEditingController(text: (foodLog?.quantity ?? 1).toString());
     final formKey = GlobalKey<FormState>();
 
     return showDialog<void>(
@@ -37,12 +38,31 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                   decoration: const InputDecoration(labelText: 'Food Name'),
                   validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
                 ),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: caloriesController,
-                  decoration: const InputDecoration(labelText: 'Calories (kcal)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Calories per serving',
+                    helperText: 'Calories for one unit/serving',
+                  ),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: quantityController,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    helperText: 'Number of servings',
+                  ),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (value) {
+                    final qty = int.tryParse(value ?? '');
+                    if (qty == null || qty < 1) return 'Quantity must be at least 1';
+                    return null;
+                  },
                 ),
               ],
             ),
@@ -60,6 +80,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                     id: foodLog?.id ?? '',
                     name: nameController.text,
                     calories: int.parse(caloriesController.text),
+                    quantity: int.parse(quantityController.text),
                     date: foodLog?.date ?? DateTime.now(),
                   );
 
@@ -78,29 +99,101 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
     );
   }
 
-  Future<void> _showEditDeleteDialog(FoodLog log) async {
-    showDialog(
+  Future<void> _showQuantityControlDialog(FoodLog log) async {
+    return showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(log.name),
-          content: const Text("Would you like to edit or delete this item?"),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _showAddEditFoodDialog(foodLog: log);
-              },
-              child: const Text("Edit"),
-            ),
-            TextButton(
-              onPressed: () {
-                _firebaseService.deleteFoodLog(log.id);
-                Navigator.of(context).pop();
-              },
-              child: const Text("Delete", style: TextStyle(color: Colors.red)),
-            ),
-          ],
+        return StreamBuilder<List<FoodLog>>(
+          stream: _firebaseService.foodLogStream,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const AlertDialog(
+                content: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            // Find the current log in the stream data
+            final currentLog = snapshot.data!.firstWhere(
+                  (item) => item.id == log.id,
+              orElse: () => log, // Fallback to original if not found
+            );
+
+            return AlertDialog(
+              title: Text(currentLog.name),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${currentLog.calories} kcal per serving'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        onPressed: currentLog.quantity > 1 ? () {
+                          final updatedLog = currentLog.copyWith(quantity: currentLog.quantity - 1);
+                          _firebaseService.updateFoodLog(updatedLog);
+                        } : null,
+                        icon: const Icon(Icons.remove_circle_outline),
+                        iconSize: 36,
+                        color: currentLog.quantity > 1 ? Colors.red : Colors.grey,
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${currentLog.quantity}',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: currentLog.quantity < 99 ? () {
+                          final updatedLog = currentLog.copyWith(quantity: currentLog.quantity + 1);
+                          _firebaseService.updateFoodLog(updatedLog);
+                        } : null,
+                        icon: const Icon(Icons.add_circle_outline),
+                        iconSize: 36,
+                        color: currentLog.quantity < 99 ? Colors.green : Colors.grey,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Total: ${currentLog.totalCalories} kcal',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showAddEditFoodDialog(foodLog: currentLog);
+                  },
+                  child: const Text("Edit"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    _firebaseService.deleteFoodLog(currentLog.id);
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text("Delete", style: TextStyle(color: Colors.red)),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text("Close"),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -131,6 +224,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
               id: '',
               name: foodLog.name,
               calories: foodLog.calories,
+              quantity: 1, // Always start with quantity 1 from favorites
               date: DateTime.now(),
             ));
           },
@@ -192,7 +286,7 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
             return const Center(child: Text('No food logged yet today.'));
           }
 
-          final totalCalories = todaysLogs.fold(0, (sum, item) => sum + item.calories);
+          final totalCalories = todaysLogs.fold(0, (sum, item) => sum + item.totalCalories);
 
           return Column(
             children: [
@@ -205,10 +299,37 @@ class _LogFoodScreenState extends State<LogFoodScreen> {
                   itemCount: todaysLogs.length,
                   itemBuilder: (context, index) {
                     final log = todaysLogs[index];
-                    return ListTile(
-                      title: Text(log.name),
-                      trailing: Text('${log.calories} kcal'),
-                      onLongPress: () => _showEditDeleteDialog(log),
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: ListTile(
+                        title: Text(log.name),
+                        subtitle: log.quantity > 1
+                            ? Text('${log.calories} kcal × ${log.quantity}')
+                            : null,
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (log.quantity > 1) ...[
+                              Text(
+                                '${log.totalCalories} kcal',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'qty: ${log.quantity}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ] else ...[
+                              Text('${log.calories} kcal'),
+                            ],
+                          ],
+                        ),
+                        onLongPress: () => _showQuantityControlDialog(log),
+                      ),
                     );
                   },
                 ),

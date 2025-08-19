@@ -107,6 +107,7 @@ class _AlcoholCalculatorState extends State<AlcoholCalculator> {
         id: '',
         name: '${_drinkNameController.text} (alcohol)',
         calories: _totalCalories.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addFoodLog(foodLog);

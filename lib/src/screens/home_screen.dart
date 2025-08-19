@@ -201,8 +201,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     final today = DateTime.now();
                     bool isSameDay(DateTime date) => date.year == today.year && date.month == today.month && date.day == today.day;
 
-                    final caloriesConsumed = (foodSnapshot.data ?? []).where((log) => isSameDay(log.date)).fold(0, (sum, item) => sum + item.calories);
-                    final caloriesBurned = (activitySnapshot.data ?? []).where((log) => isSameDay(log.date)).fold(0, (sum, item) => sum + item.caloriesBurned);
+                    // Use totalCalories and totalCaloriesBurned for quantity-aware calculations
+                    final caloriesConsumed = (foodSnapshot.data ?? [])
+                        .where((log) => isSameDay(log.date))
+                        .fold(0, (sum, item) => sum + item.totalCalories);
+
+                    final caloriesBurned = (activitySnapshot.data ?? [])
+                        .where((log) => isSameDay(log.date))
+                        .fold(0, (sum, item) => sum + item.totalCaloriesBurned);
 
                     final netCalories = caloriesConsumed - caloriesBurned;
                     final caloriesRemaining = calorieTarget - netCalories;

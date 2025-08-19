@@ -143,6 +143,7 @@ class _BasicActivityCalculatorState extends State<BasicActivityCalculator> {
         id: '',
         name: activityName,
         caloriesBurned: _caloriesBurned.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addActivityLog(activityLog);
@@ -333,6 +334,7 @@ class _WalkingRunningCalculatorState extends State<WalkingRunningCalculator> {
         id: '',
         name: activityName,
         caloriesBurned: _caloriesBurned.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addActivityLog(activityLog);
@@ -521,6 +523,7 @@ class _GymWorkoutCalculatorState extends State<GymWorkoutCalculator> {
         id: '',
         name: activityName,
         caloriesBurned: _caloriesBurned.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addActivityLog(activityLog);
@@ -715,6 +718,7 @@ class _SportsActivityCalculatorState extends State<SportsActivityCalculator> {
         id: '',
         name: activityName,
         caloriesBurned: _caloriesBurned.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addActivityLog(activityLog);

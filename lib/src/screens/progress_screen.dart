@@ -58,9 +58,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   // Add Food Dialog
-  Future<void> _showAddEditFoodDialog({FoodLog? foodLog, DateTime? forDate}) async {
+  Future<void> _showAddEditFoodDialog(
+      {FoodLog? foodLog, DateTime? forDate}) async {
     final nameController = TextEditingController(text: foodLog?.name);
-    final caloriesController = TextEditingController(text: foodLog?.calories.toString());
+    final caloriesController = TextEditingController(
+        text: foodLog?.calories.toString());
     final formKey = GlobalKey<FormState>();
 
     return showDialog<void>(
@@ -76,14 +78,21 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Food Name'),
-                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
+                  validator: (value) =>
+                  (value == null || value.isEmpty)
+                      ? 'Please enter a name'
+                      : null,
                 ),
                 TextFormField(
                   controller: caloriesController,
-                  decoration: const InputDecoration(labelText: 'Calories (kcal)'),
+                  decoration: const InputDecoration(
+                      labelText: 'Calories (kcal)'),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                  validator: (value) =>
+                  (value == null || value.isEmpty)
+                      ? 'Please enter calories'
+                      : null,
                 ),
               ],
             ),
@@ -120,16 +129,20 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   // Add Activity Dialog
-  Future<void> _showAddEditActivityDialog({ActivityLog? activityLog, DateTime? forDate}) async {
+  Future<void> _showAddEditActivityDialog(
+      {ActivityLog? activityLog, DateTime? forDate}) async {
     final nameController = TextEditingController(text: activityLog?.name);
-    final caloriesController = TextEditingController(text: activityLog?.caloriesBurned.toString());
+    final caloriesController = TextEditingController(
+        text: activityLog?.caloriesBurned.toString());
     final formKey = GlobalKey<FormState>();
 
     return showDialog<void>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text(activityLog == null ? 'Add Activity Entry' : 'Edit Activity Entry'),
+          title: Text(activityLog == null
+              ? 'Add Activity Entry'
+              : 'Edit Activity Entry'),
           content: Form(
             key: formKey,
             child: Column(
@@ -138,14 +151,21 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Activity Name'),
-                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter a name' : null,
+                  validator: (value) =>
+                  (value == null || value.isEmpty)
+                      ? 'Please enter a name'
+                      : null,
                 ),
                 TextFormField(
                   controller: caloriesController,
-                  decoration: const InputDecoration(labelText: 'Calories Burned'),
+                  decoration: const InputDecoration(
+                      labelText: 'Calories Burned'),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (value) => (value == null || value.isEmpty) ? 'Please enter calories' : null,
+                  validator: (value) =>
+                  (value == null || value.isEmpty)
+                      ? 'Please enter calories'
+                      : null,
                 ),
               ],
             ),
@@ -181,10 +201,14 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   // Enhanced Daily Details Dialog with item management
-  Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
+  Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat,
+      List<FoodLog> allFood, List<ActivityLog> allActivities) {
     final day = _asLocalDate(stat.date);
-    final foodForDay = allFood.where((log) => _asLocalDate(log.date) == day).toList();
-    final activitiesForDay = allActivities.where((log) => _asLocalDate(log.date) == day).toList();
+    final foodForDay = allFood
+        .where((log) => _asLocalDate(log.date) == day)
+        .toList();
+    final activitiesForDay = allActivities.where((log) =>
+    _asLocalDate(log.date) == day).toList();
 
     return showDialog(
       context: context,
@@ -211,7 +235,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Food Intake", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text("Food Intake", style: Theme
+                          .of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.add, color: Colors.green),
                         onPressed: () {
@@ -229,58 +257,66 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       child: Text("No food logged for this day."),
                     )
                   else
-                    ...foodForDay.map((log) => Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: ListTile(
-                        title: Text(log.name),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text("${log.calories} kcal"),
-                            PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'edit') {
-                                  Navigator.of(context).pop();
-                                  _showAddEditFoodDialog(foodLog: log);
-                                } else if (value == 'delete') {
-                                  _firebaseService.deleteFoodLog(log.id);
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit, size: 20),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete, size: 20, color: Colors.red),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: Colors.red)),
-                                    ],
-                                  ),
+                    ...foodForDay.map((log) =>
+                        Card(
+                          margin: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: ListTile(
+                            title: Text(log.name),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text("${log.calories} kcal"),
+                                PopupMenuButton<String>(
+                                  onSelected: (value) {
+                                    if (value == 'edit') {
+                                      Navigator.of(context).pop();
+                                      _showAddEditFoodDialog(foodLog: log);
+                                    } else if (value == 'delete') {
+                                      _firebaseService.deleteFoodLog(log.id);
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                                  itemBuilder: (context) =>
+                                  [
+                                    const PopupMenuItem(
+                                      value: 'edit',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.edit, size: 20),
+                                          SizedBox(width: 8),
+                                          Text('Edit'),
+                                        ],
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.delete, size: 20,
+                                              color: Colors.red),
+                                          SizedBox(width: 8),
+                                          Text('Delete', style: TextStyle(
+                                              color: Colors.red)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                    )),
+                          ),
+                        )),
                   const SizedBox(height: 24),
 
                   // Activities Section
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text("Activities", style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text("Activities", style: Theme
+                          .of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
                       IconButton(
                         icon: const Icon(Icons.add, color: Colors.green),
                         onPressed: () {
@@ -298,51 +334,59 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       child: Text("No activities logged for this day."),
                     )
                   else
-                    ...activitiesForDay.map((log) => Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: ListTile(
-                        title: Text(log.name),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text("${log.caloriesBurned} kcal", style: TextStyle(color: Colors.green.shade700)),
-                            PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'edit') {
-                                  Navigator.of(context).pop();
-                                  _showAddEditActivityDialog(activityLog: log);
-                                } else if (value == 'delete') {
-                                  _firebaseService.deleteActivityLog(log.id);
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'edit',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.edit, size: 20),
-                                      SizedBox(width: 8),
-                                      Text('Edit'),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete, size: 20, color: Colors.red),
-                                      SizedBox(width: 8),
-                                      Text('Delete', style: TextStyle(color: Colors.red)),
-                                    ],
-                                  ),
+                    ...activitiesForDay.map((log) =>
+                        Card(
+                          margin: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: ListTile(
+                            title: Text(log.name),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text("${log.caloriesBurned} kcal",
+                                    style: TextStyle(
+                                        color: Colors.green.shade700)),
+                                PopupMenuButton<String>(
+                                  onSelected: (value) {
+                                    if (value == 'edit') {
+                                      Navigator.of(context).pop();
+                                      _showAddEditActivityDialog(
+                                          activityLog: log);
+                                    } else if (value == 'delete') {
+                                      _firebaseService.deleteActivityLog(
+                                          log.id);
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                                  itemBuilder: (context) =>
+                                  [
+                                    const PopupMenuItem(
+                                      value: 'edit',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.edit, size: 20),
+                                          SizedBox(width: 8),
+                                          Text('Edit'),
+                                        ],
+                                      ),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'delete',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.delete, size: 20,
+                                              color: Colors.red),
+                                          SizedBox(width: 8),
+                                          Text('Delete', style: TextStyle(
+                                              color: Colors.red)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                    )),
+                          ),
+                        )),
                 ],
               ),
             ),
@@ -371,7 +415,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!snapshot.hasData || snapshot.hasError || snapshot.data!['profile'] == null) {
+          if (!snapshot.hasData || snapshot.hasError ||
+              snapshot.data!['profile'] == null) {
             return const Center(child: Text("Could not load user data."));
           }
 
@@ -385,7 +430,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 stream: _firebaseService.activityLogStream,
                 builder: (context, activitySnapshot) {
                   if (foodSnapshot.connectionState == ConnectionState.waiting ||
-                      activitySnapshot.connectionState == ConnectionState.waiting) {
+                      activitySnapshot.connectionState ==
+                          ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
@@ -394,13 +440,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (_netCalorieScrollController.hasClients) {
-                      _netCalorieScrollController.jumpTo(_netCalorieScrollController.position.maxScrollExtent);
+                      _netCalorieScrollController.jumpTo(
+                          _netCalorieScrollController.position.maxScrollExtent);
                     }
                     if (_weightChartScrollController.hasClients) {
-                      _weightChartScrollController.jumpTo(_weightChartScrollController.position.maxScrollExtent);
+                      _weightChartScrollController.jumpTo(
+                          _weightChartScrollController.position
+                              .maxScrollExtent);
                     }
                     if (_calorieChartScrollController.hasClients) {
-                      _calorieChartScrollController.jumpTo(_calorieChartScrollController.position.maxScrollExtent);
+                      _calorieChartScrollController.jumpTo(
+                          _calorieChartScrollController.position
+                              .maxScrollExtent);
                     }
                   });
 
@@ -408,10 +459,13 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     padding: const EdgeInsets.all(16.0),
                     children: [
                       DailyStatsCarousel(
-                        dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
+                        dailyStats: _prepareDailyStats(
+                            userProfile, userGoal, foodLogs, activityLogs),
                         userProfile: userProfile,
                         userGoal: userGoal,
-                        onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
+                        onShowDetails: (stat) =>
+                            _showDailyDetailsDialog(
+                                context, stat, foodLogs, activityLogs),
                       ),
                       const SizedBox(height: 24),
                       NetCalorieChartSection(
@@ -420,7 +474,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
                         chartData: _prepareNetCalorieBarData(
                           foodLogs,
                           activityLogs,
-                          userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
+                          userProfile.recommendedDailyIntake -
+                              userGoal.dailyCalorieDeficitTarget,
                           userProfile.createdAt,
                         ),
                         scrollController: _netCalorieScrollController,
@@ -429,24 +484,31 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       StreamBuilder<List<WeightLog>>(
                         stream: _firebaseService.weightLogStream,
                         builder: (context, weightSnapshot) {
-                          if (weightSnapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
+                          if (weightSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                                child: CircularProgressIndicator());
                           }
                           final weightLogs = weightSnapshot.data ?? [];
                           if (weightLogs.length < 2) {
-                            return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
+                            return const Center(heightFactor: 5,
+                                child: Text(
+                                    "Log weight for 2+ days to see a trend."));
                           }
                           return WeightChartSection(
                             profile: userProfile,
                             goal: userGoal,
-                            chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
+                            chartData: _prepareWeightTrendData(
+                                userProfile, userGoal, weightLogs, foodLogs,
+                                activityLogs),
                             scrollController: _weightChartScrollController,
                           );
                         },
                       ),
                       const SizedBox(height: 24),
                       CalorieChartSection(
-                        chartData: _prepareCalorieBarData(foodLogs, activityLogs),
+                        chartData: _prepareCalorieBarData(
+                            foodLogs, activityLogs),
                         scrollController: _calorieChartScrollController,
                       ),
                     ],
@@ -460,15 +522,19 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal, List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+  List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal,
+      List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<DateTime, DailyStat> dailyStatsMap = {};
     const caloriesPerPound = 3500.0;
-    final dailyCalorieTarget = (profile.recommendedDailyIntake - goal.dailyCalorieDeficitTarget).toDouble();
+    final dailyCalorieTarget = (profile.recommendedDailyIntake -
+        goal.dailyCalorieDeficitTarget).toDouble();
     final baseBurn = profile.recommendedDailyIntake.toDouble();
 
     final startDate = _asLocalDate(profile.createdAt);
     final today = _asLocalDate(DateTime.now());
-    final daysSinceStart = today.difference(startDate).inDays;
+    final daysSinceStart = today
+        .difference(startDate)
+        .inDays;
 
     for (int i = 0; i <= daysSinceStart; i++) {
       final date = startDate.add(Duration(days: i));
@@ -481,13 +547,15 @@ class _ProgressScreenState extends State<ProgressScreen> {
       );
     }
 
+    // Use totalCalories for quantity-aware calculations
     for (final log in foodLogs) {
       final day = _asLocalDate(log.date);
       if (dailyStatsMap.containsKey(day)) {
         final current = dailyStatsMap[day]!;
         dailyStatsMap[day] = DailyStat(
           date: day,
-          caloriesIn: current.caloriesIn + log.calories,
+          caloriesIn: current.caloriesIn + log.totalCalories,
+          // Changed from log.calories
           caloriesOut: current.caloriesOut,
           differenceFromGoal: 0,
           theoreticalGainLoss: 0,
@@ -495,6 +563,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       }
     }
 
+    // Use totalCaloriesBurned for quantity-aware calculations
     for (final log in activityLogs) {
       final day = _asLocalDate(log.date);
       if (dailyStatsMap.containsKey(day)) {
@@ -502,7 +571,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
         dailyStatsMap[day] = DailyStat(
           date: day,
           caloriesIn: current.caloriesIn,
-          caloriesOut: current.caloriesOut + log.caloriesBurned,
+          caloriesOut: current.caloriesOut + log.totalCaloriesBurned,
+          // Changed from log.caloriesBurned
           differenceFromGoal: 0,
           theoreticalGainLoss: 0,
         );
@@ -521,8 +591,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
       dailyStatsMap[date] = DailyStat(
         date: date,
         caloriesIn: stat.caloriesIn,
-        caloriesOut: stat.caloriesOut, // Keep as activity calories only
-        differenceFromGoal: stat.caloriesIn - stat.caloriesOut - dailyCalorieTarget,
+        caloriesOut: stat.caloriesOut,
+        // Keep as activity calories only
+        differenceFromGoal: stat.caloriesIn - stat.caloriesOut -
+            dailyCalorieTarget,
         theoreticalGainLoss: netCalorieIntake / caloriesPerPound,
       );
     });
@@ -532,14 +604,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return sortedStats;
   }
 
-  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs, int calorieTarget, DateTime startDateRaw) {
+  Map<String, dynamic> _prepareNetCalorieBarData(List<FoodLog> foodLogs,
+      List<ActivityLog> activityLogs, int calorieTarget,
+      DateTime startDateRaw) {
     final Map<int, double> dailyNet = {};
     final List<DateTime> dates = [];
     double maxNetValue = 0.0;
 
     final startDate = _asLocalDate(startDateRaw);
     final today = _asLocalDate(DateTime.now());
-    final daysSinceStart = today.difference(startDate).inDays;
+    final daysSinceStart = today
+        .difference(startDate)
+        .inDays;
 
     for (int i = 0; i <= daysSinceStart; i++) {
       final day = startDate.add(Duration(days: i));
@@ -547,19 +623,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
       dates.add(day);
     }
 
+    // Use totalCalories for quantity-aware calculations
     for (final log in foodLogs) {
       final d = _asLocalDate(log.date);
       final key = d.millisecondsSinceEpoch;
       if (dailyNet.containsKey(key)) {
-        dailyNet[key] = dailyNet[key]! + log.calories;
+        dailyNet[key] =
+            dailyNet[key]! + log.totalCalories; // Changed from log.calories
       }
     }
 
+    // Use totalCaloriesBurned for quantity-aware calculations
     for (final log in activityLogs) {
       final d = _asLocalDate(log.date);
       final key = d.millisecondsSinceEpoch;
       if (dailyNet.containsKey(key)) {
-        dailyNet[key] = dailyNet[key]! - log.caloriesBurned;
+        dailyNet[key] = dailyNet[key]! -
+            log.totalCaloriesBurned; // Changed from log.caloriesBurned
       }
     }
 
@@ -588,7 +668,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'barGroups': barGroups, 'maxNetValue': maxNetValue, 'dates': dates};
   }
 
-  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
+  Map<String, dynamic> _prepareCalorieBarData(List<FoodLog> foodLogs,
+      List<ActivityLog> activityLogs) {
     final Map<int, double> dailyConsumed = {};
     final Map<int, double> dailyBurned = {};
     final List<DateTime> dates = [];
@@ -613,7 +694,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
     }
 
     final today = _asLocalDate(DateTime.now());
-    final daysSinceStart = today.difference(firstDate).inDays;
+    final daysSinceStart = today
+        .difference(firstDate)
+        .inDays;
 
     for (int i = 0; i <= daysSinceStart; i++) {
       final day = firstDate.add(Duration(days: i));
@@ -622,19 +705,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
       dates.add(day);
     }
 
+    // Use totalCalories for quantity-aware calculations
     for (final log in foodLogs) {
       final d = _asLocalDate(log.date);
       final key = d.millisecondsSinceEpoch;
       if (dailyConsumed.containsKey(key)) {
-        dailyConsumed[key] = dailyConsumed[key]! + log.calories;
+        dailyConsumed[key] = dailyConsumed[key]! +
+            log.totalCalories; // Changed from log.calories
       }
     }
 
+    // Use totalCaloriesBurned for quantity-aware calculations
     for (final log in activityLogs) {
       final d = _asLocalDate(log.date);
       final key = d.millisecondsSinceEpoch;
       if (dailyBurned.containsKey(key)) {
-        dailyBurned[key] = dailyBurned[key]! + log.caloriesBurned;
+        dailyBurned[key] = dailyBurned[key]! +
+            log.totalCaloriesBurned; // Changed from log.caloriesBurned
       }
     }
 
@@ -662,28 +749,32 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return {'barGroups': barGroups, 'dates': dates};
   }
 
-  Map<String, dynamic> _prepareWeightTrendData(
-      UserProfile profile,
+  Map<String, dynamic> _prepareWeightTrendData(UserProfile profile,
       UserGoal goal,
       List<WeightLog> weightLogs,
       List<FoodLog> foodLogs,
-      List<ActivityLog> activityLogs,
-      ) {
+      List<ActivityLog> activityLogs,) {
     // Create daily net calorie map first
     final Map<DateTime, double> dailyNetCalories = {};
+
+    // Use totalCalories and totalCaloriesBurned for quantity-aware calculations
     for (var log in foodLogs) {
       final day = _asLocalDate(log.date);
-      dailyNetCalories.update(day, (value) => value + log.calories, ifAbsent: () => log.calories.toDouble());
+      dailyNetCalories.update(day, (value) => value + log.totalCalories,
+          ifAbsent: () => log.totalCalories.toDouble());
     }
     for (var log in activityLogs) {
       final day = _asLocalDate(log.date);
-      dailyNetCalories.update(day, (value) => value - log.caloriesBurned, ifAbsent: () => -log.caloriesBurned.toDouble());
+      dailyNetCalories.update(day, (value) => value - log.totalCaloriesBurned,
+          ifAbsent: () => -log.totalCaloriesBurned.toDouble());
     }
 
     // Create a list of all days from start to today
     final startDate = _asLocalDate(profile.createdAt);
     final today = _asLocalDate(DateTime.now());
-    final daysSinceStart = today.difference(startDate).inDays;
+    final daysSinceStart = today
+        .difference(startDate)
+        .inDays;
 
     final List<DateTime> allDates = [];
     final List<FlSpot> theoreticalSpots = [];

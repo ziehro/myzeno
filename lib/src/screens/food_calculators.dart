@@ -82,6 +82,7 @@ class _BasicFoodCalculatorState extends State<BasicFoodCalculator> {
         id: '',
         name: _foodNameController.text,
         calories: _totalCalories.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addFoodLog(foodLog);
@@ -228,6 +229,7 @@ class _RecipeCalculatorState extends State<RecipeCalculator> {
         id: '',
         name: '${_recipeNameController.text} (1 serving)',
         calories: _caloriesPerServing.round(),
+        quantity: 1, // Always add as quantity 1 from calculator
         date: DateTime.now(),
       );
       _firebaseService.addFoodLog(foodLog);
