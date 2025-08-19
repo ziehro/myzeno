@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:zeno/src/screens/goal_setting_screen.dart';
 import 'package:zeno/src/screens/login_screen.dart';
-import 'package:zeno/src/screens/main_screen.dart'; // Import the new main screen
+import 'package:zeno/src/screens/main_screen.dart';
+import 'package:zeno/src/screens/onboarding_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
+
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
@@ -28,11 +30,11 @@ class AuthWrapper extends StatelessWidget {
               }
 
               if (profileSnapshot.data == true) {
-                // Profile exists, go to the new MainScreen.
+                // Profile exists, go to the main app
                 return const MainScreen();
               } else {
-                // No profile, go to GoalSettingScreen to create one.
-                return const GoalSettingScreen();
+                // No profile, show onboarding flow first
+                return const OnboardingScreen();
               }
             },
           );

@@ -8,6 +8,8 @@ import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/screens/goal_setting_screen.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart';
+import 'package:zeno/src/widgets/welcome_banner.dart';
+import 'package:zeno/src/widgets/quick_tips_card.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
