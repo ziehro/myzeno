@@ -10,6 +10,7 @@ import 'package:zeno/src/services/hybrid_data_service.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart';
 import 'package:zeno/src/widgets/welcome_banner.dart';
 import 'package:zeno/src/widgets/quick_tips_card.dart';
+import 'package:zeno/main.dart'; // For ServiceProvider
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
@@ -21,7 +22,13 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final HybridDataService _dataService = HybridDataService();
+  late final HybridDataService _dataService;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _dataService = ServiceProvider.of(context).hybridDataService;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +47,16 @@ class _HomeScreenState extends State<HomeScreen> {
         future: _loadUserData(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading your data...'),
+                ],
+              ),
+            );
           }
 
           if (snapshot.hasError) {
@@ -50,11 +66,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Icon(Icons.error_outline, size: 64, color: Colors.red.shade300),
                   const SizedBox(height: 16),
-                  Text('Error loading data: ${snapshot.error}'),
+                  const Text('Error loading data'),
+                  Text(
+                    '${snapshot.error}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    textAlign: TextAlign.center,
+                  ),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () => setState(() {}), // Retry
                     child: const Text('Retry'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _handleEditProfileAndGoal,
+                    child: const Text('Set Up Profile'),
                   ),
                 ],
               ),
@@ -62,14 +88,19 @@ class _HomeScreenState extends State<HomeScreen> {
           }
 
           final data = snapshot.data;
-          if (data == null || data['profile'] == null || data['goal'] == null) {
+          if (data == null) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.person_add_outlined, size: 64, color: Colors.grey.shade400),
                   const SizedBox(height: 16),
-                  const Text('Profile not found. Please set up your profile.'),
+                  const Text(
+                    'Welcome to MyZeno!',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Let\'s set up your profile to get started.'),
                   const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: _handleEditProfileAndGoal,
@@ -80,9 +111,38 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
-          final UserProfile userProfile = data['profile'];
-          final UserGoal userGoal = data['goal'];
+          final UserProfile? userProfile = data['profile'];
+          final UserGoal? userGoal = data['goal'];
 
+          // Check if either profile or goal is missing
+          if (userProfile == null || userGoal == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.settings_outlined, size: 64, color: Colors.orange.shade400),
+                  const SizedBox(height: 16),
+                  Text(
+                    userProfile == null ? 'Profile Setup Required' : 'Goal Setup Required',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    userProfile == null
+                        ? 'Please complete your profile setup to continue.'
+                        : 'Please set your weight loss goal to continue.',
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _handleEditProfileAndGoal,
+                    child: Text(userProfile == null ? 'Complete Profile' : 'Set Goal'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // Both profile and goal exist, show main content
           return RefreshIndicator(
             onRefresh: () async => setState(() {}),
             child: ListView(
@@ -179,9 +239,21 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             TextButton(
               child: const Text('Sign Out'),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(context).pop();
-                _dataService.signOut();
+                try {
+                  await _dataService.signOut();
+                  // The AuthWrapper will automatically show the login screen
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error signing out: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
               },
             ),
           ],
@@ -211,13 +283,31 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 16),
             StreamBuilder<List<FoodLog>>(
               stream: _dataService.todaysFoodLogStream,
+              initialData: [], // Start with empty data
               builder: (context, foodSnapshot) {
                 return StreamBuilder<List<ActivityLog>>(
                   stream: _dataService.todaysActivityLogStream,
+                  initialData: [], // Start with empty data
                   builder: (context, activitySnapshot) {
-                    if (foodSnapshot.connectionState == ConnectionState.waiting ||
-                        activitySnapshot.connectionState == ConnectionState.waiting) {
+                    print('HomeScreen: Food connection state: ${foodSnapshot.connectionState}');
+                    print('HomeScreen: Activity connection state: ${activitySnapshot.connectionState}');
+                    print('HomeScreen: Food has data: ${foodSnapshot.hasData}');
+                    print('HomeScreen: Activity has data: ${activitySnapshot.hasData}');
+                    print('HomeScreen: Food data length: ${foodSnapshot.data?.length ?? 0}');
+                    print('HomeScreen: Activity data length: ${activitySnapshot.data?.length ?? 0}');
+
+                    // Only show loading for the first few seconds
+                    if (foodSnapshot.connectionState == ConnectionState.waiting && !foodSnapshot.hasData ||
+                        activitySnapshot.connectionState == ConnectionState.waiting && !activitySnapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (foodSnapshot.hasError) {
+                      print('HomeScreen: Food stream error: ${foodSnapshot.error}');
+                    }
+
+                    if (activitySnapshot.hasError) {
+                      print('HomeScreen: Activity stream error: ${activitySnapshot.error}');
                     }
 
                     final caloriesConsumed = (foodSnapshot.data ?? [])
@@ -229,6 +319,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     final netCalories = caloriesConsumed - caloriesBurned;
                     final caloriesRemaining = calorieTarget - netCalories;
                     final progress = calorieTarget > 0 ? (netCalories / calorieTarget) : 0.0;
+
+                    print('HomeScreen: Calculated values - Consumed: $caloriesConsumed, Burned: $caloriesBurned, Net: $netCalories');
 
                     return Column(
                       children: [

@@ -52,7 +52,7 @@ class FirebaseService {
 
     // Close existing controllers
     _todayFoodController?.close();
-    _todayActivityController = null;
+    _todayFoodController = null;
     _todayActivityController?.close();
     _todayActivityController = null;
     _weightController?.close();
@@ -76,18 +76,33 @@ class FirebaseService {
 
   // --- AUTH METHODS ---
   Future<UserCredential> signUp(String email, String password) async {
-    _clearCache(); // Clear cache on auth change
-    return await _auth.createUserWithEmailAndPassword(email: email, password: password);
+    try {
+      _clearCache(); // Clear cache on auth change
+      return await _auth.createUserWithEmailAndPassword(email: email, password: password);
+    } catch (e) {
+      print('Error signing up: $e');
+      rethrow;
+    }
   }
 
   Future<UserCredential> signIn(String email, String password) async {
-    _clearCache(); // Clear cache on auth change
-    return await _auth.signInWithEmailAndPassword(email: email, password: password);
+    try {
+      _clearCache(); // Clear cache on auth change
+      return await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } catch (e) {
+      print('Error signing in: $e');
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {
-    _clearCache(); // Clear cache on sign out
-    await _auth.signOut();
+    try {
+      _clearCache(); // Clear cache on sign out
+      await _auth.signOut();
+    } catch (e) {
+      print('Error signing out: $e');
+      rethrow;
+    }
   }
 
   // --- PROFILE & GOAL METHODS (HEAVILY CACHED) ---
@@ -96,15 +111,32 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return false;
 
-    // Use cache first
-    if (_cachedProfile != null && !_shouldRefreshCache()) {
-      return true;
-    }
-
     try {
-      final doc = await userDoc.get();
-      return doc.exists;
+      // Check both profile and goal exist
+      final profileDoc = await userDoc.get();
+      final goalDoc = await userDoc.collection('goals').doc('main_goal').get();
+
+      final profileExists = profileDoc.exists && profileDoc.data() != null;
+      final goalExists = goalDoc.exists && goalDoc.data() != null;
+
+      print('Profile exists: $profileExists, Goal exists: $goalExists');
+
+      // Cache the profile if it exists
+      if (profileExists) {
+        _cachedProfile = UserProfile.fromJson(profileDoc.data()!);
+        _lastCacheUpdate = DateTime.now();
+      }
+
+      // Cache the goal if it exists
+      if (goalExists) {
+        _cachedGoal = UserGoal.fromJson(goalDoc.data()!);
+        _lastCacheUpdate = DateTime.now();
+      }
+
+      // Both must exist for complete setup
+      return profileExists && goalExists;
     } catch (e) {
+      print('Error checking if user profile exists: $e');
       return false;
     }
   }
@@ -113,17 +145,28 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) throw Exception("User not logged in");
 
-    // Save to Firebase
-    await userDoc.set(profile.toJson());
-    await userDoc.collection('goals').doc('main_goal').set(goal.toJson());
+    try {
+      // Save to Firebase
+      await userDoc.set(profile.toJson());
+      await userDoc.collection('goals').doc('main_goal').set(goal.toJson());
 
-    // Update cache immediately
-    _cachedProfile = profile;
-    _cachedGoal = goal;
-    _lastCacheUpdate = DateTime.now();
+      // Update cache immediately
+      _cachedProfile = profile;
+      _cachedGoal = goal;
+      _lastCacheUpdate = DateTime.now();
+    } catch (e) {
+      print('Error saving user profile and goal: $e');
+      rethrow;
+    }
   }
 
   Future<UserProfile?> getUserProfile() async {
+    // Check if user is logged in
+    if (currentUser == null) {
+      print('No user logged in');
+      return null;
+    }
+
     // Return cached version if available and fresh
     if (_cachedProfile != null && !_shouldRefreshCache()) {
       return _cachedProfile;
@@ -134,18 +177,27 @@ class FirebaseService {
 
     try {
       final snapshot = await userDoc.get();
-      if (snapshot.exists) {
+      if (snapshot.exists && snapshot.data() != null) {
         _cachedProfile = UserProfile.fromJson(snapshot.data()!);
         _lastCacheUpdate = DateTime.now();
         return _cachedProfile;
+      } else {
+        print('User profile document does not exist');
+        return null;
       }
     } catch (e) {
       print('Error getting user profile: $e');
+      return null;
     }
-    return null;
   }
 
   Future<UserGoal?> getUserGoal() async {
+    // Check if user is logged in
+    if (currentUser == null) {
+      print('No user logged in');
+      return null;
+    }
+
     // Return cached version if available and fresh
     if (_cachedGoal != null && !_shouldRefreshCache()) {
       return _cachedGoal;
@@ -156,81 +208,106 @@ class FirebaseService {
 
     try {
       final snapshot = await userDoc.collection('goals').doc('main_goal').get();
-      if (snapshot.exists) {
+      if (snapshot.exists && snapshot.data() != null) {
         _cachedGoal = UserGoal.fromJson(snapshot.data()!);
         _lastCacheUpdate = DateTime.now();
         return _cachedGoal;
+      } else {
+        print('User goal document does not exist');
+        return null;
       }
     } catch (e) {
       print('Error getting user goal: $e');
+      return null;
     }
-    return null;
   }
 
   // --- TODAY'S DATA STREAMS (SINGLE SOURCE OF TRUTH) ---
 
   Stream<List<FoodLog>> get todaysFoodLogStream {
-    // Return existing stream if available
-    if (_todayFoodController != null && !_todayFoodController!.isClosed) {
-      return _todayFoodController!.stream;
-    }
-
     final userDoc = _userDocRef;
-    if (userDoc == null) return Stream.value([]);
-
-    _todayFoodController = StreamController<List<FoodLog>>.broadcast();
+    if (userDoc == null) {
+      print('FirebaseService: No user document reference, returning empty stream');
+      return Stream.value([]);
+    }
 
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
-    // Use single listener and cache aggressively
-    userDoc.collection('food_logs')
+    print('FirebaseService: Creating direct food logs stream for ${startOfDay.toIso8601String()}');
+
+    return userDoc.collection('food_logs')
         .where('date', isGreaterThanOrEqualTo: startOfDay.toIso8601String())
         .where('date', isLessThan: endOfDay.toIso8601String())
         .orderBy('date', descending: true)
         .snapshots()
-        .listen((snapshot) {
-      final logs = snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList();
-      _cachedTodayFood = logs;
-      if (!_todayFoodController!.isClosed) {
-        _todayFoodController!.add(logs);
-      }
-    });
+        .map((snapshot) {
+      try {
+        print('FirebaseService: Processing ${snapshot.docs.length} food log documents');
+        final logs = snapshot.docs.map((doc) {
+          try {
+            return FoodLog.fromJson(doc.data(), doc.id);
+          } catch (e) {
+            print('FirebaseService: Error parsing food log ${doc.id}: $e');
+            return null;
+          }
+        }).where((log) => log != null).cast<FoodLog>().toList();
 
-    return _todayFoodController!.stream;
+        print('FirebaseService: Successfully parsed ${logs.length} food logs');
+        return logs;
+      } catch (e) {
+        print('FirebaseService: Error processing food logs: $e');
+        return <FoodLog>[];
+      }
+    })
+        .handleError((error) {
+      print('FirebaseService: Error in food logs stream: $error');
+      return <FoodLog>[];
+    });
   }
 
   Stream<List<ActivityLog>> get todaysActivityLogStream {
-    // Return existing stream if available
-    if (_todayActivityController != null && !_todayActivityController!.isClosed) {
-      return _todayActivityController!.stream;
-    }
-
     final userDoc = _userDocRef;
-    if (userDoc == null) return Stream.value([]);
-
-    _todayActivityController = StreamController<List<ActivityLog>>.broadcast();
+    if (userDoc == null) {
+      print('FirebaseService: No user document reference, returning empty stream');
+      return Stream.value([]);
+    }
 
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
-    // Use single listener and cache aggressively
-    userDoc.collection('activity_logs')
+    print('FirebaseService: Creating direct activity logs stream for ${startOfDay.toIso8601String()}');
+
+    return userDoc.collection('activity_logs')
         .where('date', isGreaterThanOrEqualTo: startOfDay.toIso8601String())
         .where('date', isLessThan: endOfDay.toIso8601String())
         .orderBy('date', descending: true)
         .snapshots()
-        .listen((snapshot) {
-      final logs = snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList();
-      _cachedTodayActivity = logs;
-      if (!_todayActivityController!.isClosed) {
-        _todayActivityController!.add(logs);
-      }
-    });
+        .map((snapshot) {
+      try {
+        print('FirebaseService: Processing ${snapshot.docs.length} activity log documents');
+        final logs = snapshot.docs.map((doc) {
+          try {
+            return ActivityLog.fromJson(doc.data(), doc.id);
+          } catch (e) {
+            print('FirebaseService: Error parsing activity log ${doc.id}: $e');
+            return null;
+          }
+        }).where((log) => log != null).cast<ActivityLog>().toList();
 
-    return _todayActivityController!.stream;
+        print('FirebaseService: Successfully parsed ${logs.length} activity logs');
+        return logs;
+      } catch (e) {
+        print('FirebaseService: Error processing activity logs: $e');
+        return <ActivityLog>[];
+      }
+    })
+        .handleError((error) {
+      print('FirebaseService: Error in activity logs stream: $error');
+      return <ActivityLog>[];
+    });
   }
 
   // --- WEIGHT LOGS (CACHED & LIMITED) ---
@@ -252,10 +329,22 @@ class FirebaseService {
         .limit(30) // Only get last 30 entries
         .snapshots()
         .listen((snapshot) {
-      final logs = snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList();
-      _cachedWeightLogs = logs;
+      try {
+        final logs = snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList();
+        _cachedWeightLogs = logs;
+        if (!_weightController!.isClosed) {
+          _weightController!.add(logs);
+        }
+      } catch (e) {
+        print('Error processing weight logs: $e');
+        if (!_weightController!.isClosed) {
+          _weightController!.addError(e);
+        }
+      }
+    }, onError: (error) {
+      print('Error in weight logs stream: $error');
       if (!_weightController!.isClosed) {
-        _weightController!.add(logs);
+        _weightController!.addError(error);
       }
     });
 
@@ -266,34 +355,74 @@ class FirebaseService {
 
   Future<List<FoodLog>> getRecentFoodLogs() async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return [];
+    if (userDoc == null) {
+      print('FirebaseService: No user document for recent food logs');
+      return [];
+    }
 
-    // Get last 14 days only for progress
-    final fourteenDaysAgo = DateTime.now().subtract(const Duration(days: 14));
+    try {
+      // Get last 30 days for progress (increased from 14)
+      final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
 
-    final snapshot = await userDoc.collection('food_logs')
-        .where('date', isGreaterThanOrEqualTo: fourteenDaysAgo.toIso8601String())
-        .orderBy('date', descending: true)
-        .limit(100) // Hard limit
-        .get();
+      print('FirebaseService: Querying recent food logs from ${thirtyDaysAgo.toIso8601String()}');
 
-    return snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList();
+      final snapshot = await userDoc.collection('food_logs')
+          .where('date', isGreaterThanOrEqualTo: thirtyDaysAgo.toIso8601String())
+          .orderBy('date', descending: true)
+          .limit(200) // Increased limit
+          .get();
+
+      final logs = snapshot.docs.map((doc) {
+        try {
+          return FoodLog.fromJson(doc.data(), doc.id);
+        } catch (e) {
+          print('FirebaseService: Error parsing recent food log ${doc.id}: $e');
+          return null;
+        }
+      }).where((log) => log != null).cast<FoodLog>().toList();
+
+      print('FirebaseService: Retrieved ${logs.length} recent food logs');
+      return logs;
+    } catch (e) {
+      print('Error getting recent food logs: $e');
+      return [];
+    }
   }
 
   Future<List<ActivityLog>> getRecentActivityLogs() async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return [];
+    if (userDoc == null) {
+      print('FirebaseService: No user document for recent activity logs');
+      return [];
+    }
 
-    // Get last 14 days only for progress
-    final fourteenDaysAgo = DateTime.now().subtract(const Duration(days: 14));
+    try {
+      // Get last 30 days for progress (increased from 14)
+      final thirtyDaysAgo = DateTime.now().subtract(const Duration(days: 30));
 
-    final snapshot = await userDoc.collection('activity_logs')
-        .where('date', isGreaterThanOrEqualTo: fourteenDaysAgo.toIso8601String())
-        .orderBy('date', descending: true)
-        .limit(100) // Hard limit
-        .get();
+      print('FirebaseService: Querying recent activity logs from ${thirtyDaysAgo.toIso8601String()}');
 
-    return snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList();
+      final snapshot = await userDoc.collection('activity_logs')
+          .where('date', isGreaterThanOrEqualTo: thirtyDaysAgo.toIso8601String())
+          .orderBy('date', descending: true)
+          .limit(200) // Increased limit
+          .get();
+
+      final logs = snapshot.docs.map((doc) {
+        try {
+          return ActivityLog.fromJson(doc.data(), doc.id);
+        } catch (e) {
+          print('FirebaseService: Error parsing recent activity log ${doc.id}: $e');
+          return null;
+        }
+      }).where((log) => log != null).cast<ActivityLog>().toList();
+
+      print('FirebaseService: Retrieved ${logs.length} recent activity logs');
+      return logs;
+    } catch (e) {
+      print('Error getting recent activity logs: $e');
+      return [];
+    }
   }
 
   // Use these for progress screen instead of streams
@@ -315,7 +444,11 @@ class FirebaseService {
     return userDoc.collection('frequent_food_logs')
         .limit(8) // Reduced limit
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList());
+        .map((snapshot) => snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList())
+        .handleError((error) {
+      print('Error in frequent food logs stream: $error');
+      return <FoodLog>[];
+    });
   }
 
   Stream<List<ActivityLog>> get frequentActivityLogStream {
@@ -326,7 +459,11 @@ class FirebaseService {
     return userDoc.collection('frequent_activity_logs')
         .limit(8) // Reduced limit
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList());
+        .map((snapshot) => snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList())
+        .handleError((error) {
+      print('Error in frequent activity logs stream: $error');
+      return <ActivityLog>[];
+    });
   }
 
   // --- TIPS & RECIPES (GLOBAL DATA - CACHE HEAVILY) ---
@@ -343,10 +480,15 @@ class FirebaseService {
       return;
     }
 
-    final snapshot = await _firestore.collection('tips').limit(15).get();
-    _cachedTips = snapshot.docs.map((d) => Tip.fromFirestore(d)).toList();
-    _lastGlobalCacheUpdate = DateTime.now();
-    yield _cachedTips!;
+    try {
+      final snapshot = await _firestore.collection('tips').limit(15).get();
+      _cachedTips = snapshot.docs.map((d) => Tip.fromFirestore(d)).toList();
+      _lastGlobalCacheUpdate = DateTime.now();
+      yield _cachedTips!;
+    } catch (e) {
+      print('Error getting tips: $e');
+      yield [];
+    }
   }
 
   Stream<List<Recipe>> get recipesStream async* {
@@ -357,66 +499,111 @@ class FirebaseService {
       return;
     }
 
-    final snapshot = await _firestore.collection('recipes').limit(15).get();
-    _cachedRecipes = snapshot.docs.map((d) => Recipe.fromFirestore(d)).toList();
-    _lastGlobalCacheUpdate = DateTime.now();
-    yield _cachedRecipes!;
+    try {
+      final snapshot = await _firestore.collection('recipes').limit(15).get();
+      _cachedRecipes = snapshot.docs.map((d) => Recipe.fromFirestore(d)).toList();
+      _lastGlobalCacheUpdate = DateTime.now();
+      yield _cachedRecipes!;
+    } catch (e) {
+      print('Error getting recipes: $e');
+      yield [];
+    }
   }
 
   // --- CRUD OPERATIONS (OPTIMIZED) ---
 
   Future<void> addFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
+    if (userDoc == null) throw Exception("User not logged in");
 
-    await userDoc.collection('food_logs').add(log.toJson());
+    try {
+      await userDoc.collection('food_logs').add(log.toJson());
 
-    // Update frequent logs only every 10th addition
-    if (DateTime.now().second % 10 == 0) {
-      await addFrequentFoodLog(log);
+      // Update frequent logs only every 10th addition
+      if (DateTime.now().second % 10 == 0) {
+        await addFrequentFoodLog(log);
+      }
+    } catch (e) {
+      print('Error adding food log: $e');
+      rethrow;
     }
   }
 
   Future<void> addActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
+    if (userDoc == null) throw Exception("User not logged in");
 
-    await userDoc.collection('activity_logs').add(log.toJson());
+    try {
+      await userDoc.collection('activity_logs').add(log.toJson());
 
-    // Update frequent logs only every 10th addition
-    if (DateTime.now().second % 10 == 0) {
-      await addFrequentActivityLog(log);
+      // Update frequent logs only every 10th addition
+      if (DateTime.now().second % 10 == 0) {
+        await addFrequentActivityLog(log);
+      }
+    } catch (e) {
+      print('Error adding activity log: $e');
+      rethrow;
     }
   }
 
   Future<void> addWeightLog(WeightLog log) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
-    await userDoc.collection('weight_logs').add(log.toJson());
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('weight_logs').add(log.toJson());
+    } catch (e) {
+      print('Error adding weight log: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
-    await userDoc.collection('food_logs').doc(log.id).update(log.toJson());
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('food_logs').doc(log.id).update(log.toJson());
+    } catch (e) {
+      print('Error updating food log: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
-    await userDoc.collection('activity_logs').doc(log.id).update(log.toJson());
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('activity_logs').doc(log.id).update(log.toJson());
+    } catch (e) {
+      print('Error updating activity log: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteFoodLog(String logId) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
-    await userDoc.collection('food_logs').doc(logId).delete();
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('food_logs').doc(logId).delete();
+    } catch (e) {
+      print('Error deleting food log: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteActivityLog(String logId) async {
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
-    await userDoc.collection('activity_logs').doc(logId).delete();
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('activity_logs').doc(logId).delete();
+    } catch (e) {
+      print('Error deleting activity log: $e');
+      rethrow;
+    }
   }
 
   // --- FREQUENT LISTS (MINIMAL UPDATES) ---
@@ -424,33 +611,65 @@ class FirebaseService {
   Future<void> addFrequentFoodLog(FoodLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
-    await userDoc.collection('frequent_food_logs').doc(log.name).set(log.toJson());
+
+    try {
+      await userDoc.collection('frequent_food_logs').doc(log.name).set(log.toJson());
+    } catch (e) {
+      print('Error adding frequent food log: $e');
+      // Don't rethrow - this is not critical
+    }
   }
 
   Future<void> addFrequentActivityLog(ActivityLog log) async {
     final userDoc = _userDocRef;
     if (userDoc == null) return;
-    await userDoc.collection('frequent_activity_logs').doc(log.name).set(log.toJson());
+
+    try {
+      await userDoc.collection('frequent_activity_logs').doc(log.name).set(log.toJson());
+    } catch (e) {
+      print('Error adding frequent activity log: $e');
+      // Don't rethrow - this is not critical
+    }
   }
 
-  Future<void> addTip(Tip tip) async => await _firestore.collection('tips').add(tip.toFirestore());
-  Future<void> addRecipe(Recipe recipe) async => await _firestore.collection('recipes').add(recipe.toFirestore());
+  Future<void> addTip(Tip tip) async {
+    try {
+      await _firestore.collection('tips').add(tip.toFirestore());
+    } catch (e) {
+      print('Error adding tip: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> addRecipe(Recipe recipe) async {
+    try {
+      await _firestore.collection('recipes').add(recipe.toFirestore());
+    } catch (e) {
+      print('Error adding recipe: $e');
+      rethrow;
+    }
+  }
 
   // --- BATCH OPERATIONS ---
 
   Future<void> batchUpdateQuantities(List<FoodLog> foodUpdates, List<ActivityLog> activityUpdates) async {
     final batch = _firestore.batch();
     final userDoc = _userDocRef;
-    if (userDoc == null) return;
+    if (userDoc == null) throw Exception("User not logged in");
 
-    for (final food in foodUpdates) {
-      batch.update(userDoc.collection('food_logs').doc(food.id), food.toJson());
+    try {
+      for (final food in foodUpdates) {
+        batch.update(userDoc.collection('food_logs').doc(food.id), food.toJson());
+      }
+
+      for (final activity in activityUpdates) {
+        batch.update(userDoc.collection('activity_logs').doc(activity.id), activity.toJson());
+      }
+
+      await batch.commit();
+    } catch (e) {
+      print('Error batch updating quantities: $e');
+      rethrow;
     }
-
-    for (final activity in activityUpdates) {
-      batch.update(userDoc.collection('activity_logs').doc(activity.id), activity.toJson());
-    }
-
-    await batch.commit();
   }
 }

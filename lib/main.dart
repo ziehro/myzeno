@@ -9,10 +9,16 @@ import 'package:zeno/src/services/hybrid_data_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase (required even for free users for auth)
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  try {
+    // Initialize Firebase (required even for free users for auth)
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    print('Firebase initialized successfully');
+  } catch (e) {
+    print('Error initializing Firebase: $e');
+    // Continue anyway - the app can still work with local storage
+  }
 
   // Initialize services
   final subscriptionService = SubscriptionService();
@@ -105,6 +111,7 @@ class _MyZenoAppState extends State<MyZenoApp> {
   @override
   void dispose() {
     widget.subscriptionService.removeListener(_onSubscriptionChanged);
+    _themeMode.dispose();
     super.dispose();
   }
 
@@ -114,8 +121,13 @@ class _MyZenoAppState extends State<MyZenoApp> {
   }
 
   Future<void> _performInitialSetup() async {
-    // Perform maintenance tasks (cleanup old data for free users)
-    await widget.hybridDataService.performMaintenance();
+    try {
+      // Perform maintenance tasks (cleanup old data for free users)
+      await widget.hybridDataService.performMaintenance();
+    } catch (e) {
+      print('Error during initial setup: $e');
+      // Continue anyway - don't block app startup
+    }
   }
 
   @override
@@ -136,6 +148,46 @@ class _MyZenoAppState extends State<MyZenoApp> {
               darkTheme: AppTheme.darkTheme,
               themeMode: mode,
               home: const AuthWrapper(),
+              // Add error handling for the entire app
+              builder: (context, child) {
+                // Global error boundary
+                ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
+                  return Scaffold(
+                    body: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Oops! Something went wrong',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Please restart the app',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              // Try to recover by rebuilding the widget tree
+                              if (context.mounted) {
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(builder: (_) => const AuthWrapper()),
+                                      (route) => false,
+                                );
+                              }
+                            },
+                            child: const Text('Restart App'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                };
+                return child ?? const SizedBox.shrink();
+              },
             );
           },
         ),

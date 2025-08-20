@@ -16,10 +16,11 @@ dependencies:
   firebase_core: ^3.1.1
   firebase_auth: ^5.1.1
   cloud_firestore: ^5.0.2
-  shared_preferences: ^2.2.2
+
   # Local Storage (for Free users)
   sqflite: ^2.3.0
   path: ^1.8.3
+  shared_preferences: ^2.2.2
 
   # In-App Purchases (for subscription management)
   in_app_purchase: ^3.1.11

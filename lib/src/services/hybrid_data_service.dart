@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/models/activity_log.dart';
 import 'package:zeno/src/models/weight_log.dart';
@@ -31,7 +32,25 @@ class HybridDataService extends ChangeNotifier {
   static const Duration _profileCacheLife = Duration(minutes: 10);
   static const Duration _streamRefreshInterval = Duration(minutes: 3);
 
-  bool get _useCloudStorage => _subscriptionService.canAccessCloudSync;
+  // For development: Allow override to test premium features
+  // Set this to true to test as premium user
+  static const bool _debugForcePremium = true; // Change this to test premium features
+
+  // For now, always use cloud storage when user is signed in (regardless of subscription)
+  // This ensures that Firebase auth users get their data from Firebase
+  bool get _useCloudStorage {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final hasCloudAccess = _subscriptionService.canAccessCloudSync ||
+        _debugForcePremium;
+
+    // Use cloud storage if user is signed in (even free users need Firebase for auth)
+    final useCloud = currentUser != null;
+
+    print('HybridDataService: User signed in: ${currentUser !=
+        null}, Has cloud access: $hasCloudAccess, Debug force premium: $_debugForcePremium, Using cloud: $useCloud');
+
+    return useCloud;
+  }
 
   // --- CACHE MANAGEMENT ---
 
@@ -55,7 +74,7 @@ class HybridDataService extends ChangeNotifier {
   }
 
   bool _shouldRefreshProfileCache() {
-    final currentUserId = _firebaseService.currentUser?.uid;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
     // Clear cache if different user
     if (currentUserId != _lastCachedUserId) {
@@ -66,191 +85,301 @@ class HybridDataService extends ChangeNotifier {
 
     // Refresh cache based on age
     if (_lastProfileCacheUpdate == null) return true;
-    return DateTime.now().difference(_lastProfileCacheUpdate!).compareTo(_profileCacheLife) > 0;
+    return DateTime.now().difference(_lastProfileCacheUpdate!).compareTo(
+        _profileCacheLife) > 0;
   }
 
   // --- PROFILE & GOAL METHODS (HEAVILY CACHED) ---
 
   Future<UserProfile?> getUserProfile() async {
+    // Check if user is signed in first
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      print('HybridDataService: No user logged in');
+      return null;
+    }
+
+    print('HybridDataService: Getting profile for user ${currentUser.uid}');
+
     if (_useCloudStorage) {
+      print('HybridDataService: Using cloud storage');
       // Use aggressive caching for Firebase
       if (_cachedProfile != null && !_shouldRefreshProfileCache()) {
+        print('HybridDataService: Returning cached profile');
         return _cachedProfile;
       }
 
-      final profile = await _firebaseService.getUserProfile();
-      if (profile != null) {
-        _cachedProfile = profile;
-        _lastProfileCacheUpdate = DateTime.now();
+      try {
+        final profile = await _firebaseService.getUserProfile();
+        if (profile != null) {
+          print(
+              'HybridDataService: Got profile from Firebase: ${profile.email}');
+          _cachedProfile = profile;
+          _lastProfileCacheUpdate = DateTime.now();
+        } else {
+          print('HybridDataService: No profile found in Firebase');
+        }
+        return profile;
+      } catch (e) {
+        print('Error getting profile from Firebase: $e');
+        return null;
       }
-      return profile;
     } else {
-      return await _localService.getUserProfile();
+      print('HybridDataService: Using local storage');
+      try {
+        final profile = await _localService.getUserProfile();
+        if (profile != null) {
+          print('HybridDataService: Got profile from local storage: ${profile
+              .email}');
+        } else {
+          print('HybridDataService: No profile found in local storage');
+        }
+        return profile;
+      } catch (e) {
+        print('Error getting profile from local storage: $e');
+        return null;
+      }
     }
   }
 
   Future<UserGoal?> getUserGoal() async {
+    // Check if user is signed in first
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      print('HybridDataService: No user logged in for goal');
+      return null;
+    }
+
+    print('HybridDataService: Getting goal for user ${currentUser.uid}');
+
     if (_useCloudStorage) {
+      print('HybridDataService: Using cloud storage for goal');
       // Use aggressive caching for Firebase
       if (_cachedGoal != null && !_shouldRefreshProfileCache()) {
+        print('HybridDataService: Returning cached goal');
         return _cachedGoal;
       }
 
-      final goal = await _firebaseService.getUserGoal();
-      if (goal != null) {
-        _cachedGoal = goal;
-        _lastProfileCacheUpdate = DateTime.now();
+      try {
+        final goal = await _firebaseService.getUserGoal();
+        if (goal != null) {
+          print('HybridDataService: Got goal from Firebase: ${goal
+              .lbsToLose} lbs in ${goal.days} days');
+          _cachedGoal = goal;
+          _lastProfileCacheUpdate = DateTime.now();
+        } else {
+          print('HybridDataService: No goal found in Firebase');
+        }
+        return goal;
+      } catch (e) {
+        print('Error getting goal from Firebase: $e');
+        return null;
       }
-      return goal;
     } else {
-      return await _localService.getUserGoal();
+      print('HybridDataService: Using local storage for goal');
+      try {
+        final goal = await _localService.getUserGoal();
+        if (goal != null) {
+          print('HybridDataService: Got goal from local storage: ${goal
+              .lbsToLose} lbs in ${goal.days} days');
+        } else {
+          print('HybridDataService: No goal found in local storage');
+        }
+        return goal;
+      } catch (e) {
+        print('Error getting goal from local storage: $e');
+        return null;
+      }
     }
   }
 
-  Future<void> saveUserProfileAndGoal(UserProfile profile, UserGoal goal) async {
-    if (_useCloudStorage) {
-      await _firebaseService.saveUserProfileAndGoal(profile, goal);
-      // Update cache immediately
-      _cachedProfile = profile;
-      _cachedGoal = goal;
-      _lastProfileCacheUpdate = DateTime.now();
-    } else {
-      await _localService.saveUserProfile(profile);
-      await _localService.saveUserGoal(goal);
+  Future<void> saveUserProfileAndGoal(UserProfile profile,
+      UserGoal goal) async {
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.saveUserProfileAndGoal(profile, goal);
+        // Update cache immediately
+        _cachedProfile = profile;
+        _cachedGoal = goal;
+        _lastProfileCacheUpdate = DateTime.now();
+      } else {
+        await _localService.saveUserProfile(profile);
+        await _localService.saveUserGoal(goal);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error saving profile and goal: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   // --- FOOD LOG METHODS ---
 
   Future<void> addFoodLog(FoodLog log) async {
-    if (_useCloudStorage) {
-      await _firebaseService.addFoodLog(log);
-    } else {
-      await _localService.addFoodLog(log);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.addFoodLog(log);
+      } else {
+        await _localService.addFoodLog(log);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error adding food log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   Future<void> updateFoodLog(FoodLog log) async {
-    if (_useCloudStorage) {
-      await _firebaseService.updateFoodLog(log);
-    } else {
-      await _localService.updateFoodLog(log);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.updateFoodLog(log);
+      } else {
+        await _localService.updateFoodLog(log);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error updating food log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   Future<void> deleteFoodLog(String logId) async {
-    if (_useCloudStorage) {
-      await _firebaseService.deleteFoodLog(logId);
-    } else {
-      await _localService.deleteFoodLog(logId);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.deleteFoodLog(logId);
+      } else {
+        await _localService.deleteFoodLog(logId);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error deleting food log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   // --- ACTIVITY LOG METHODS ---
 
   Future<void> addActivityLog(ActivityLog log) async {
-    if (_useCloudStorage) {
-      await _firebaseService.addActivityLog(log);
-    } else {
-      await _localService.addActivityLog(log);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.addActivityLog(log);
+      } else {
+        await _localService.addActivityLog(log);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error adding activity log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   Future<void> updateActivityLog(ActivityLog log) async {
-    if (_useCloudStorage) {
-      await _firebaseService.updateActivityLog(log);
-    } else {
-      await _localService.updateActivityLog(log);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.updateActivityLog(log);
+      } else {
+        await _localService.updateActivityLog(log);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error updating activity log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   Future<void> deleteActivityLog(String logId) async {
-    if (_useCloudStorage) {
-      await _firebaseService.deleteActivityLog(logId);
-    } else {
-      await _localService.deleteActivityLog(logId);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.deleteActivityLog(logId);
+      } else {
+        await _localService.deleteActivityLog(logId);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error deleting activity log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   // --- WEIGHT LOG METHODS ---
 
   Future<void> addWeightLog(WeightLog log) async {
-    if (_useCloudStorage) {
-      await _firebaseService.addWeightLog(log);
-    } else {
-      await _localService.addWeightLog(log);
+    try {
+      if (_useCloudStorage) {
+        await _firebaseService.addWeightLog(log);
+      } else {
+        await _localService.addWeightLog(log);
+      }
+      notifyListeners();
+    } catch (e) {
+      print('Error adding weight log: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   // --- OPTIMIZED STREAM METHODS (SINGLE CONTROLLERS) ---
 
   Stream<List<FoodLog>> get todaysFoodLogStream {
+    print(
+        'HybridDataService: Getting today\'s food log stream, useCloud: $_useCloudStorage');
+
     if (_useCloudStorage) {
-      // Use single controller to prevent multiple Firebase listeners
-      if (_todayFoodController != null && !_todayFoodController!.isClosed) {
-        return _todayFoodController!.stream;
-      }
-
-      _todayFoodController = StreamController<List<FoodLog>>.broadcast();
-
-      // Use the optimized Firebase stream directly (already filtered for today)
-      _firebaseService.todaysFoodLogStream.listen(
-            (logs) {
-          if (!_todayFoodController!.isClosed) {
-            _todayFoodController!.add(logs);
-          }
-        },
-        onError: (error) {
-          if (!_todayFoodController!.isClosed) {
-            _todayFoodController!.addError(error);
-          }
-        },
-      );
-
-      return _todayFoodController!.stream;
+      // Create a new stream each time to avoid shared controller issues
+      return _firebaseService.todaysFoodLogStream
+          .handleError((error) {
+        print('HybridDataService: Error in food logs stream: $error');
+        return <FoodLog>[];
+      })
+          .map((logs) {
+        print('HybridDataService: Received ${logs
+            .length} food logs from Firebase');
+        return logs;
+      });
     } else {
+      print('HybridDataService: Using local storage for food logs');
       // Reduce frequency for local storage
       return Stream.periodic(const Duration(seconds: 3), (_) async {
-        return await _localService.getTodaysFoodLogs();
+        try {
+          final logs = await _localService.getTodaysFoodLogs();
+          print('HybridDataService: Got ${logs
+              .length} food logs from local storage');
+          return logs;
+        } catch (e) {
+          print('HybridDataService: Error getting local food logs: $e');
+          return <FoodLog>[];
+        }
       }).asyncMap((future) => future).distinct();
     }
   }
 
   Stream<List<ActivityLog>> get todaysActivityLogStream {
+    print(
+        'HybridDataService: Getting today\'s activity log stream, useCloud: $_useCloudStorage');
+
     if (_useCloudStorage) {
-      // Use single controller to prevent multiple Firebase listeners
-      if (_todayActivityController != null && !_todayActivityController!.isClosed) {
-        return _todayActivityController!.stream;
-      }
-
-      _todayActivityController = StreamController<List<ActivityLog>>.broadcast();
-
-      // Use the optimized Firebase stream directly (already filtered for today)
-      _firebaseService.todaysActivityLogStream.listen(
-            (logs) {
-          if (!_todayActivityController!.isClosed) {
-            _todayActivityController!.add(logs);
-          }
-        },
-        onError: (error) {
-          if (!_todayActivityController!.isClosed) {
-            _todayActivityController!.addError(error);
-          }
-        },
-      );
-
-      return _todayActivityController!.stream;
+      // Create a new stream each time to avoid shared controller issues
+      return _firebaseService.todaysActivityLogStream
+          .handleError((error) {
+        print('HybridDataService: Error in activity logs stream: $error');
+        return <ActivityLog>[];
+      })
+          .map((logs) {
+        print('HybridDataService: Received ${logs
+            .length} activity logs from Firebase');
+        return logs;
+      });
     } else {
+      print('HybridDataService: Using local storage for activity logs');
       return Stream.periodic(const Duration(seconds: 3), (_) async {
-        return await _localService.getTodaysActivityLogs();
+        try {
+          final logs = await _localService.getTodaysActivityLogs();
+          print('HybridDataService: Got ${logs
+              .length} activity logs from local storage');
+          return logs;
+        } catch (e) {
+          print('HybridDataService: Error getting local activity logs: $e');
+          return <ActivityLog>[];
+        }
       }).asyncMap((future) => future).distinct();
     }
   }
@@ -258,22 +387,52 @@ class HybridDataService extends ChangeNotifier {
   // --- RECENT DATA (FOR PROGRESS SCREEN) - USE FUTURE INSTEAD OF STREAM ---
 
   Future<List<FoodLog>> getRecentFoodLogs() async {
-    if (_useCloudStorage) {
-      // Use one-time fetch instead of continuous stream
-      return await _firebaseService.getRecentFoodLogs();
-    } else {
-      final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
-      return await _localService.getRecentFoodLogs(days: maxDays);
+    try {
+      print(
+          'HybridDataService: Getting recent food logs, useCloud: $_useCloudStorage');
+      if (_useCloudStorage) {
+        // Use one-time fetch instead of continuous stream
+        final logs = await _firebaseService.getRecentFoodLogs();
+        print('HybridDataService: Got ${logs
+            .length} recent food logs from Firebase');
+        return logs;
+      } else {
+        final maxDays = _subscriptionService.maxHistoryDays == -1
+            ? 365
+            : _subscriptionService.maxHistoryDays;
+        final logs = await _localService.getRecentFoodLogs(days: maxDays);
+        print('HybridDataService: Got ${logs
+            .length} recent food logs from local storage');
+        return logs;
+      }
+    } catch (e) {
+      print('Error getting recent food logs: $e');
+      return [];
     }
   }
 
   Future<List<ActivityLog>> getRecentActivityLogs() async {
-    if (_useCloudStorage) {
-      // Use one-time fetch instead of continuous stream
-      return await _firebaseService.getRecentActivityLogs();
-    } else {
-      final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
-      return await _localService.getRecentActivityLogs(days: maxDays);
+    try {
+      print(
+          'HybridDataService: Getting recent activity logs, useCloud: $_useCloudStorage');
+      if (_useCloudStorage) {
+        // Use one-time fetch instead of continuous stream
+        final logs = await _firebaseService.getRecentActivityLogs();
+        print('HybridDataService: Got ${logs
+            .length} recent activity logs from Firebase');
+        return logs;
+      } else {
+        final maxDays = _subscriptionService.maxHistoryDays == -1
+            ? 365
+            : _subscriptionService.maxHistoryDays;
+        final logs = await _localService.getRecentActivityLogs(days: maxDays);
+        print('HybridDataService: Got ${logs
+            .length} recent activity logs from local storage');
+        return logs;
+      }
+    } catch (e) {
+      print('Error getting recent activity logs: $e');
+      return [];
     }
   }
 
@@ -285,7 +444,9 @@ class HybridDataService extends ChangeNotifier {
           .asyncMap((future) => future);
     } else {
       return Stream.periodic(const Duration(seconds: 5), (_) async {
-        final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
+        final maxDays = _subscriptionService.maxHistoryDays == -1
+            ? 365
+            : _subscriptionService.maxHistoryDays;
         return await _localService.getRecentFoodLogs(days: maxDays);
       }).asyncMap((future) => future).distinct();
     }
@@ -294,11 +455,14 @@ class HybridDataService extends ChangeNotifier {
   Stream<List<ActivityLog>> get recentActivityLogStream {
     if (_useCloudStorage) {
       // Use much less frequent updates for progress data
-      return Stream.periodic(_streamRefreshInterval, (_) => getRecentActivityLogs())
+      return Stream.periodic(
+          _streamRefreshInterval, (_) => getRecentActivityLogs())
           .asyncMap((future) => future);
     } else {
       return Stream.periodic(const Duration(seconds: 5), (_) async {
-        final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
+        final maxDays = _subscriptionService.maxHistoryDays == -1
+            ? 365
+            : _subscriptionService.maxHistoryDays;
         return await _localService.getRecentActivityLogs(days: maxDays);
       }).asyncMap((future) => future).distinct();
     }
@@ -330,7 +494,9 @@ class HybridDataService extends ChangeNotifier {
       return _weightController!.stream;
     } else {
       return Stream.periodic(const Duration(seconds: 5), (_) async {
-        final maxLogs = _subscriptionService.maxWeightLogs == -1 ? null : _subscriptionService.maxWeightLogs;
+        final maxLogs = _subscriptionService.maxWeightLogs == -1
+            ? null
+            : _subscriptionService.maxWeightLogs;
         return await _localService.getWeightLogs(limit: maxLogs);
       }).asyncMap((future) => future).distinct();
     }
@@ -448,25 +614,37 @@ class HybridDataService extends ChangeNotifier {
   // --- DATA MAINTENANCE ---
 
   Future<void> performMaintenance() async {
-    if (!_useCloudStorage) {
-      // Clean up old data for free users
-      await _localService.cleanupOldData(
-        keepDays: _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays,
-      );
+    try {
+      if (!_useCloudStorage) {
+        // Clean up old data for free users
+        await _localService.cleanupOldData(
+          keepDays: _subscriptionService.maxHistoryDays == -1
+              ? 365
+              : _subscriptionService.maxHistoryDays,
+        );
+      }
+    } catch (e) {
+      print('Error performing maintenance: $e');
     }
   }
 
   // --- AUTH METHODS ---
 
   Future<void> signOut() async {
-    _clearCache(); // Clear all caches on sign out
+    try {
+      _clearCache(); // Clear all caches on sign out
 
-    if (_useCloudStorage) {
-      await _firebaseService.signOut();
-    } else {
-      await _localService.clearAllData();
+      if (_useCloudStorage) {
+        await _firebaseService.signOut();
+      } else {
+        await _localService.clearAllData();
+      }
+
+      notifyListeners();
+    } catch (e) {
+      print('Error signing out: $e');
+      rethrow;
     }
-    notifyListeners();
   }
 
   // --- SUBSCRIPTION CHANGE HANDLERS ---
