@@ -28,6 +28,8 @@ class ProgressScreen extends StatefulWidget {
 class _ProgressScreenState extends State<ProgressScreen> {
   final HybridDataService _dataService = HybridDataService();
   Future<Map<String, dynamic>>? _userDataFuture;
+  Future<Map<String, List<dynamic>>>? _progressDataFuture;
+  Future<List<WeightLog>>? _weightDataFuture;
   final ScrollController _netCalorieScrollController = ScrollController();
   final ScrollController _weightChartScrollController = ScrollController();
   final ScrollController _calorieChartScrollController = ScrollController();
@@ -35,7 +37,13 @@ class _ProgressScreenState extends State<ProgressScreen> {
   @override
   void initState() {
     super.initState();
+    _loadAllData();
+  }
+
+  void _loadAllData() {
     _userDataFuture = _loadUserData();
+    _progressDataFuture = _loadProgressData();
+    _weightDataFuture = _loadWeightData();
   }
 
   @override
@@ -61,6 +69,20 @@ class _ProgressScreenState extends State<ProgressScreen> {
       'food': foodLogs,
       'activity': activityLogs,
     };
+  }
+
+  Future<List<WeightLog>> _loadWeightData() async {
+    try {
+      // Get weight logs from the stream's first value with timeout
+      final weightLogs = await _dataService.weightLogStream
+          .timeout(const Duration(seconds: 10))
+          .first;
+      print('ProgressScreen: Loaded ${weightLogs.length} weight logs');
+      return weightLogs;
+    } catch (e) {
+      print('ProgressScreen: Error loading weight data: $e');
+      return [];
+    }
   }
 
   DateTime _asLocalDate(DateTime dt) {
@@ -130,6 +152,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     _dataService.addFoodLog(logToSave);
                   }
                   Navigator.of(context).pop();
+                  // Refresh data after adding/editing
+                  setState(() {
+                    _loadAllData();
+                  });
                 }
               },
             ),
@@ -202,6 +228,10 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     _dataService.addActivityLog(logToSave);
                   }
                   Navigator.of(context).pop();
+                  // Refresh data after adding/editing
+                  setState(() {
+                    _loadAllData();
+                  });
                 }
               },
             ),
@@ -367,7 +397,18 @@ class _ProgressScreenState extends State<ProgressScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Progress'),
-        actions: [AppMenuButton(onNavigateToTab: widget.onNavigateToTab)],
+        actions: [
+          AppMenuButton(onNavigateToTab: widget.onNavigateToTab),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _loadAllData();
+              });
+            },
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _userDataFuture,
@@ -382,9 +423,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
           final UserProfile userProfile = snapshot.data!['profile'];
           final UserGoal userGoal = snapshot.data!['goal'];
 
-          // OPTIMIZED: Use one-time fetch instead of continuous streams for progress data
           return FutureBuilder<Map<String, List<dynamic>>>(
-            future: _loadProgressData(),
+            future: _progressDataFuture,
             builder: (context, progressSnapshot) {
               if (progressSnapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -393,57 +433,111 @@ class _ProgressScreenState extends State<ProgressScreen> {
               final foodLogs = (progressSnapshot.data?['food'] as List<FoodLog>?) ?? [];
               final activityLogs = (progressSnapshot.data?['activity'] as List<ActivityLog>?) ?? [];
 
-              return ListView(
-                padding: const EdgeInsets.all(16.0),
-                children: [
-                  DailyStatsCarousel(
-                    dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
-                    userProfile: userProfile,
-                    userGoal: userGoal,
-                    onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
-                  ),
-                  const SizedBox(height: 24),
-                  NetCalorieChartSection(
-                    profile: userProfile,
-                    goal: userGoal,
-                    chartData: _prepareNetCalorieBarData(
-                      foodLogs,
-                      activityLogs,
-                      userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
-                      userProfile.createdAt,
-                    ),
-                    scrollController: _netCalorieScrollController,
-                  ),
-                  const SizedBox(height: 24),
-                  StreamBuilder<List<WeightLog>>(
-                    stream: _dataService.weightLogStream,
-                    builder: (context, weightSnapshot) {
-                      if (weightSnapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      final weightLogs = weightSnapshot.data ?? [];
-                      if (weightLogs.length < 2) {
-                        return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
-                      }
-                      return WeightChartSection(
+              return FutureBuilder<List<WeightLog>>(
+                future: _weightDataFuture,
+                builder: (context, weightSnapshot) {
+                  // Show progress even if weight data is still loading
+                  final weightLogs = weightSnapshot.data ?? [];
+                  final bool weightDataLoading = weightSnapshot.connectionState == ConnectionState.waiting;
+
+                  return ListView(
+                    padding: const EdgeInsets.all(16.0),
+                    children: [
+                      DailyStatsCarousel(
+                        dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
+                        userProfile: userProfile,
+                        userGoal: userGoal,
+                        onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
+                      ),
+                      const SizedBox(height: 24),
+                      NetCalorieChartSection(
                         profile: userProfile,
                         goal: userGoal,
-                        chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
-                        scrollController: _weightChartScrollController,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  CalorieChartSection(
-                    chartData: _prepareCalorieBarData(foodLogs, activityLogs),
-                    scrollController: _calorieChartScrollController,
-                  ),
-                ],
+                        chartData: _prepareNetCalorieBarData(
+                          foodLogs,
+                          activityLogs,
+                          userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
+                          userProfile.createdAt,
+                        ),
+                        scrollController: _netCalorieScrollController,
+                      ),
+                      const SizedBox(height: 24),
+                      // Weight chart section with better loading/error handling
+                      _buildWeightChartSection(userProfile, userGoal, weightLogs, foodLogs, activityLogs, weightDataLoading),
+                      const SizedBox(height: 24),
+                      CalorieChartSection(
+                        chartData: _prepareCalorieBarData(foodLogs, activityLogs),
+                        scrollController: _calorieChartScrollController,
+                      ),
+                    ],
+                  );
+                },
               );
             },
           );
         },
       ),
+    );
+  }
+
+  Widget _buildWeightChartSection(UserProfile profile, UserGoal goal, List<WeightLog> weightLogs,
+      List<FoodLog> foodLogs, List<ActivityLog> activityLogs, bool isLoading) {
+    if (isLoading) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          height: 200,
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Loading weight data...'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (weightLogs.length < 2) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(Icons.monitor_weight, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              Text(
+                'Weight Trend Chart',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text('Log weight for 2+ days to see a trend.'),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // Navigate to home screen to log weight
+                  widget.onNavigateToTab?.call(0);
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Log Weight'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return WeightChartSection(
+      profile: profile,
+      goal: goal,
+      chartData: _prepareWeightTrendData(profile, goal, weightLogs, foodLogs, activityLogs),
+      scrollController: _weightChartScrollController,
     );
   }
 
