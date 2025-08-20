@@ -8,7 +8,7 @@ import 'package:zeno/src/models/food_log.dart';
 import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
-import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/services/hybrid_data_service.dart';
 import 'dart:math';
 import 'widgets/daily_stats_carousel.dart';
 import 'widgets/net_calorie_chart_section.dart';
@@ -26,7 +26,7 @@ class ProgressScreen extends StatefulWidget {
 }
 
 class _ProgressScreenState extends State<ProgressScreen> {
-  final FirebaseService _firebaseService = FirebaseService();
+  final HybridDataService _dataService = HybridDataService();
   Future<Map<String, dynamic>>? _userDataFuture;
   final ScrollController _netCalorieScrollController = ScrollController();
   final ScrollController _weightChartScrollController = ScrollController();
@@ -47,9 +47,20 @@ class _ProgressScreenState extends State<ProgressScreen> {
   }
 
   Future<Map<String, dynamic>> _loadUserData() async {
-    final profile = await _firebaseService.getUserProfile();
-    final goal = await _firebaseService.getUserGoal();
+    final profile = await _dataService.getUserProfile();
+    final goal = await _dataService.getUserGoal();
     return {'profile': profile, 'goal': goal};
+  }
+
+  Future<Map<String, List<dynamic>>> _loadProgressData() async {
+    // Load data once instead of continuous streams
+    final foodLogs = await _dataService.getRecentFoodLogs();
+    final activityLogs = await _dataService.getRecentActivityLogs();
+
+    return {
+      'food': foodLogs,
+      'activity': activityLogs,
+    };
   }
 
   DateTime _asLocalDate(DateTime dt) {
@@ -114,9 +125,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
                   );
 
                   if (foodLog != null) {
-                    _firebaseService.updateFoodLog(logToSave);
+                    _dataService.updateFoodLog(logToSave);
                   } else {
-                    _firebaseService.addFoodLog(logToSave);
+                    _dataService.addFoodLog(logToSave);
                   }
                   Navigator.of(context).pop();
                 }
@@ -186,9 +197,9 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     date: activityLog?.date ?? forDate ?? DateTime.now(),
                   );
                   if (activityLog != null) {
-                    _firebaseService.updateActivityLog(logToSave);
+                    _dataService.updateActivityLog(logToSave);
                   } else {
-                    _firebaseService.addActivityLog(logToSave);
+                    _dataService.addActivityLog(logToSave);
                   }
                   Navigator.of(context).pop();
                 }
@@ -200,7 +211,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
-  // Enhanced Daily Details Dialog with item management
   // Enhanced Daily Details Dialog without menu dots
   Future<void> _showDailyDetailsDialog(BuildContext context, DailyStat stat, List<FoodLog> allFood, List<ActivityLog> allActivities) {
     final day = _asLocalDate(stat.date);
@@ -279,7 +289,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
                             ],
                           ],
                         ),
-                        // Removed the PopupMenuButton entirely
                       ),
                     )),
                   const SizedBox(height: 24),
@@ -336,7 +345,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
                             ],
                           ],
                         ),
-                        // Removed the PopupMenuButton entirely
                       ),
                     )),
                 ],
@@ -374,81 +382,63 @@ class _ProgressScreenState extends State<ProgressScreen> {
           final UserProfile userProfile = snapshot.data!['profile'];
           final UserGoal userGoal = snapshot.data!['goal'];
 
-          // OPTIMIZED: Use recent data streams with limits instead of unlimited streams
-          return StreamBuilder<List<FoodLog>>(
-            stream: _firebaseService.recentFoodLogStream, // Changed from foodLogStream
-            builder: (context, foodSnapshot) {
-              return StreamBuilder<List<ActivityLog>>(
-                stream: _firebaseService.recentActivityLogStream, // Changed from activityLogStream
-                builder: (context, activitySnapshot) {
-                  if (foodSnapshot.connectionState == ConnectionState.waiting ||
-                      activitySnapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+          // OPTIMIZED: Use one-time fetch instead of continuous streams for progress data
+          return FutureBuilder<Map<String, List<dynamic>>>(
+            future: _loadProgressData(),
+            builder: (context, progressSnapshot) {
+              if (progressSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-                  final foodLogs = (foodSnapshot.data ?? []).toList();
-                  final activityLogs = (activitySnapshot.data ?? []).toList();
+              final foodLogs = (progressSnapshot.data?['food'] as List<FoodLog>?) ?? [];
+              final activityLogs = (progressSnapshot.data?['activity'] as List<ActivityLog>?) ?? [];
 
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_netCalorieScrollController.hasClients) {
-                      _netCalorieScrollController.jumpTo(_netCalorieScrollController.position.maxScrollExtent);
-                    }
-                    if (_weightChartScrollController.hasClients) {
-                      _weightChartScrollController.jumpTo(_weightChartScrollController.position.maxScrollExtent);
-                    }
-                    if (_calorieChartScrollController.hasClients) {
-                      _calorieChartScrollController.jumpTo(_calorieChartScrollController.position.maxScrollExtent);
-                    }
-                  });
-
-                  return ListView(
-                    padding: const EdgeInsets.all(16.0),
-                    children: [
-                      DailyStatsCarousel(
-                        dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
-                        userProfile: userProfile,
-                        userGoal: userGoal,
-                        onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
-                      ),
-                      const SizedBox(height: 24),
-                      NetCalorieChartSection(
+              return ListView(
+                padding: const EdgeInsets.all(16.0),
+                children: [
+                  DailyStatsCarousel(
+                    dailyStats: _prepareDailyStats(userProfile, userGoal, foodLogs, activityLogs),
+                    userProfile: userProfile,
+                    userGoal: userGoal,
+                    onShowDetails: (stat) => _showDailyDetailsDialog(context, stat, foodLogs, activityLogs),
+                  ),
+                  const SizedBox(height: 24),
+                  NetCalorieChartSection(
+                    profile: userProfile,
+                    goal: userGoal,
+                    chartData: _prepareNetCalorieBarData(
+                      foodLogs,
+                      activityLogs,
+                      userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
+                      userProfile.createdAt,
+                    ),
+                    scrollController: _netCalorieScrollController,
+                  ),
+                  const SizedBox(height: 24),
+                  StreamBuilder<List<WeightLog>>(
+                    stream: _dataService.weightLogStream,
+                    builder: (context, weightSnapshot) {
+                      if (weightSnapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final weightLogs = weightSnapshot.data ?? [];
+                      if (weightLogs.length < 2) {
+                        return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
+                      }
+                      return WeightChartSection(
                         profile: userProfile,
                         goal: userGoal,
-                        chartData: _prepareNetCalorieBarData(
-                          foodLogs,
-                          activityLogs,
-                          userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
-                          userProfile.createdAt,
-                        ),
-                        scrollController: _netCalorieScrollController,
-                      ),
-                      const SizedBox(height: 24),
-                      StreamBuilder<List<WeightLog>>(
-                        stream: _firebaseService.weightLogStream,
-                        builder: (context, weightSnapshot) {
-                          if (weightSnapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator());
-                          }
-                          final weightLogs = weightSnapshot.data ?? [];
-                          if (weightLogs.length < 2) {
-                            return const Center(heightFactor: 5, child: Text("Log weight for 2+ days to see a trend."));
-                          }
-                          return WeightChartSection(
-                            profile: userProfile,
-                            goal: userGoal,
-                            chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
-                            scrollController: _weightChartScrollController,
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      CalorieChartSection(
-                        chartData: _prepareCalorieBarData(foodLogs, activityLogs),
-                        scrollController: _calorieChartScrollController,
-                      ),
-                    ],
-                  );
-                },
+                        chartData: _prepareWeightTrendData(userProfile, userGoal, weightLogs, foodLogs, activityLogs),
+                        scrollController: _weightChartScrollController,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  CalorieChartSection(
+                    chartData: _prepareCalorieBarData(foodLogs, activityLogs),
+                    scrollController: _calorieChartScrollController,
+                  ),
+                ],
               );
             },
           );
@@ -456,6 +446,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       ),
     );
   }
+
   List<DailyStat> _prepareDailyStats(UserProfile profile, UserGoal goal,
       List<FoodLog> foodLogs, List<ActivityLog> activityLogs) {
     final Map<DateTime, DailyStat> dailyStatsMap = {};
@@ -489,7 +480,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
         dailyStatsMap[day] = DailyStat(
           date: day,
           caloriesIn: current.caloriesIn + log.totalCalories,
-          // Changed from log.calories
           caloriesOut: current.caloriesOut,
           differenceFromGoal: 0,
           theoreticalGainLoss: 0,
@@ -506,7 +496,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
           date: day,
           caloriesIn: current.caloriesIn,
           caloriesOut: current.caloriesOut + log.totalCaloriesBurned,
-          // Changed from log.caloriesBurned
           differenceFromGoal: 0,
           theoreticalGainLoss: 0,
         );
@@ -526,7 +515,6 @@ class _ProgressScreenState extends State<ProgressScreen> {
         date: date,
         caloriesIn: stat.caloriesIn,
         caloriesOut: stat.caloriesOut,
-        // Keep as activity calories only
         differenceFromGoal: stat.caloriesIn - stat.caloriesOut -
             dailyCalorieTarget,
         theoreticalGainLoss: netCalorieIntake / caloriesPerPound,
@@ -563,7 +551,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final key = d.millisecondsSinceEpoch;
       if (dailyNet.containsKey(key)) {
         dailyNet[key] =
-            dailyNet[key]! + log.totalCalories; // Changed from log.calories
+            dailyNet[key]! + log.totalCalories;
       }
     }
 
@@ -573,7 +561,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final key = d.millisecondsSinceEpoch;
       if (dailyNet.containsKey(key)) {
         dailyNet[key] = dailyNet[key]! -
-            log.totalCaloriesBurned; // Changed from log.caloriesBurned
+            log.totalCaloriesBurned;
       }
     }
 
@@ -645,7 +633,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final key = d.millisecondsSinceEpoch;
       if (dailyConsumed.containsKey(key)) {
         dailyConsumed[key] = dailyConsumed[key]! +
-            log.totalCalories; // Changed from log.calories
+            log.totalCalories;
       }
     }
 
@@ -655,7 +643,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       final key = d.millisecondsSinceEpoch;
       if (dailyBurned.containsKey(key)) {
         dailyBurned[key] = dailyBurned[key]! +
-            log.totalCaloriesBurned; // Changed from log.caloriesBurned
+            log.totalCaloriesBurned;
       }
     }
 

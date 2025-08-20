@@ -24,7 +24,7 @@ class GoalSettingScreen extends StatefulWidget {
 }
 
 class _GoalSettingScreenState extends State<GoalSettingScreen> {
-  final _firebaseService = FirebaseService();
+  final _firebaseService = FirebaseService(); // Use Firebase directly for profile creation
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _lbsController;
   late final TextEditingController _daysController;

@@ -6,7 +6,7 @@ import 'package:zeno/src/models/user_goal.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/screens/goal_setting_screen.dart';
-import 'package:zeno/src/services/firebase_service.dart';
+import 'package:zeno/src/services/hybrid_data_service.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart';
 import 'package:zeno/src/widgets/welcome_banner.dart';
 import 'package:zeno/src/widgets/quick_tips_card.dart';
@@ -21,7 +21,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final FirebaseService _firebaseService = FirebaseService();
+  final HybridDataService _dataService = HybridDataService();
 
   @override
   Widget build(BuildContext context) {
@@ -88,8 +88,17 @@ class _HomeScreenState extends State<HomeScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
+                // Welcome banner for new users
+                WelcomeBanner(
+                  userName: userProfile.email,
+                  dailyCalorieTarget: userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
+                  dailyDeficit: userGoal.dailyCalorieDeficitTarget,
+                ),
                 _buildCalorieDashboard(userProfile, userGoal),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                // Daily tips card
+                QuickTipsCard(onNavigateToTab: widget.onNavigateToTab),
+                const SizedBox(height: 8),
                 _buildWeightDashboard(userProfile),
               ],
             ),
@@ -101,8 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<Map<String, dynamic>> _loadUserData() async {
     try {
-      final profile = await _firebaseService.getUserProfile();
-      final goal = await _firebaseService.getUserGoal();
+      final profile = await _dataService.getUserProfile();
+      final goal = await _dataService.getUserGoal();
 
       return {
         'profile': profile,
@@ -145,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (formKey.currentState!.validate()) {
                   final newWeight = double.parse(weightController.text);
                   final newLog = WeightLog(id: '', date: DateTime.now(), weight: newWeight);
-                  _firebaseService.addWeightLog(newLog);
+                  _dataService.addWeightLog(newLog);
                   Navigator.of(context).pop();
                 }
               },
@@ -172,7 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Text('Sign Out'),
               onPressed: () {
                 Navigator.of(context).pop();
-                _firebaseService.signOut();
+                _dataService.signOut();
               },
             ),
           ],
@@ -201,10 +210,10 @@ class _HomeScreenState extends State<HomeScreen> {
             Text("Today's Balance", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             StreamBuilder<List<FoodLog>>(
-              stream: _firebaseService.todaysFoodLogStream,
+              stream: _dataService.todaysFoodLogStream,
               builder: (context, foodSnapshot) {
                 return StreamBuilder<List<ActivityLog>>(
-                  stream: _firebaseService.todaysActivityLogStream,
+                  stream: _dataService.todaysActivityLogStream,
                   builder: (context, activitySnapshot) {
                     if (foodSnapshot.connectionState == ConnectionState.waiting ||
                         activitySnapshot.connectionState == ConnectionState.waiting) {
@@ -270,7 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildWeightDashboard(UserProfile userProfile) {
     return StreamBuilder<List<WeightLog>>(
-      stream: _firebaseService.weightLogStream,
+      stream: _dataService.weightLogStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
@@ -284,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // Load goal data for theoretical calculation
         return FutureBuilder<UserGoal?>(
-          future: _firebaseService.getUserGoal(),
+          future: _dataService.getUserGoal(),
           builder: (context, goalSnapshot) {
             if (!goalSnapshot.hasData) {
               return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
