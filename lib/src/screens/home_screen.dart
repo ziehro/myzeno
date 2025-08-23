@@ -10,6 +10,8 @@ import 'package:zeno/src/services/hybrid_data_service.dart';
 import 'package:zeno/src/widgets/app_menu_button.dart';
 import 'package:zeno/src/widgets/welcome_banner.dart';
 import 'package:zeno/src/widgets/quick_tips_card.dart';
+import 'package:zeno/src/widgets/journey_progress_widget.dart';
+import 'package:zeno/src/services/journey_completion_service.dart';
 import 'package:zeno/main.dart'; // For ServiceProvider
 
 class HomeScreen extends StatefulWidget {
@@ -22,12 +24,23 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final HybridDataService _dataService;
+  late HybridDataService _dataService;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _dataService = ServiceProvider.of(context).hybridDataService;
+
+    // Check for journey completion when home screen loads
+    _checkJourneyCompletion();
+  }
+
+  Future<void> _checkJourneyCompletion() async {
+    // Small delay to ensure the screen is fully loaded
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      await JourneyCompletionService.checkJourneyCompletion(context, _dataService);
+    }
   }
 
   @override
@@ -154,11 +167,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   dailyCalorieTarget: userProfile.recommendedDailyIntake - userGoal.dailyCalorieDeficitTarget,
                   dailyDeficit: userGoal.dailyCalorieDeficitTarget,
                 ),
+
+                // Journey Progress Widget
+                const JourneyProgressWidget(),
+                const SizedBox(height: 16),
+
                 _buildCalorieDashboard(userProfile, userGoal),
                 const SizedBox(height: 16),
+
                 // Daily tips card
                 QuickTipsCard(onNavigateToTab: widget.onNavigateToTab),
                 const SizedBox(height: 8),
+
                 _buildWeightDashboard(userProfile),
               ],
             ),
@@ -373,14 +393,70 @@ class _HomeScreenState extends State<HomeScreen> {
     return StreamBuilder<List<WeightLog>>(
       stream: _dataService.weightLogStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
+        // Better error handling and loading states
+        if (snapshot.hasError) {
+          print('HomeScreen: Weight stream error: ${snapshot.error}');
+          return Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Weight Progress", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                        const SizedBox(height: 8),
+                        const Text('Error loading weight data'),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () => setState(() {}), // Trigger rebuild
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          return Card(
+            elevation: 2,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Weight Progress", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  const Center(
+                    child: Column(
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Loading weight data...'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
 
         final weightLogs = snapshot.data ?? [];
+        print('HomeScreen: Displaying ${weightLogs.length} weight logs');
+
         final currentWeight = weightLogs.isNotEmpty ? weightLogs.first.weight : userProfile.startWeight;
         final actualLoss = userProfile.startWeight - currentWeight;
-
         final int daysPassed = DateTime.now().difference(userProfile.createdAt).inDays;
 
         // Load goal data for theoretical calculation
@@ -388,7 +464,14 @@ class _HomeScreenState extends State<HomeScreen> {
           future: _dataService.getUserGoal(),
           builder: (context, goalSnapshot) {
             if (!goalSnapshot.hasData) {
-              return const Card(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
+              return Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              );
             }
 
             final userGoal = goalSnapshot.data!;
@@ -410,6 +493,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Divider(height: 24),
                     _buildInfoRow("Theoretical Loss:", "${theoreticalLoss.toStringAsFixed(1)} lbs"),
                     _buildInfoRow("Actual Loss:", "${actualLoss.toStringAsFixed(1)} lbs", isBold: true, valueColor: Colors.green.shade700),
+                    if (weightLogs.isEmpty) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Log your weight daily to track real progress!',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Center(
                       child: ElevatedButton(

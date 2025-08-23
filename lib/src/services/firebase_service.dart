@@ -312,43 +312,46 @@ class FirebaseService {
 
   // --- WEIGHT LOGS (CACHED & LIMITED) ---
 
+
   Stream<List<WeightLog>> get weightLogStream {
-    // Return existing stream if available
-    if (_weightController != null && !_weightController!.isClosed) {
-      return _weightController!.stream;
+    final userDoc = _userDocRef;
+    if (userDoc == null) {
+      print('FirebaseService: No user document reference for weight logs');
+      return Stream.value([]);
     }
 
-    final userDoc = _userDocRef;
-    if (userDoc == null) return Stream.value([]);
+    print('FirebaseService: Creating direct weight logs stream');
 
-    _weightController = StreamController<List<WeightLog>>.broadcast();
-
-    // Limit to recent weight logs only
-    userDoc.collection('weight_logs')
+    // Use direct Firebase stream instead of complex controller logic
+    return userDoc.collection('weight_logs')
         .orderBy('date', descending: true)
-        .limit(30) // Only get last 30 entries
+        .limit(50) // Reasonable limit for performance
         .snapshots()
-        .listen((snapshot) {
+        .map((snapshot) {
       try {
-        final logs = snapshot.docs.map((doc) => WeightLog.fromJson(doc.data(), doc.id)).toList();
-        _cachedWeightLogs = logs;
-        if (!_weightController!.isClosed) {
-          _weightController!.add(logs);
-        }
-      } catch (e) {
-        print('Error processing weight logs: $e');
-        if (!_weightController!.isClosed) {
-          _weightController!.addError(e);
-        }
-      }
-    }, onError: (error) {
-      print('Error in weight logs stream: $error');
-      if (!_weightController!.isClosed) {
-        _weightController!.addError(error);
-      }
-    });
+        print('FirebaseService: Processing ${snapshot.docs.length} weight log documents');
+        final logs = snapshot.docs.map((doc) {
+          try {
+            return WeightLog.fromJson(doc.data(), doc.id);
+          } catch (e) {
+            print('FirebaseService: Error parsing weight log ${doc.id}: $e');
+            return null;
+          }
+        }).where((log) => log != null).cast<WeightLog>().toList();
 
-    return _weightController!.stream;
+        print('FirebaseService: Successfully parsed ${logs.length} weight logs');
+        // Update cache for other methods that need it
+        _cachedWeightLogs = logs;
+        return logs;
+      } catch (e) {
+        print('FirebaseService: Error processing weight logs: $e');
+        return <WeightLog>[];
+      }
+    })
+        .handleError((error) {
+      print('FirebaseService: Error in weight logs stream: $error');
+      return <WeightLog>[];
+    });
   }
 
   // --- PROGRESS DATA (STATIC QUERIES) ---

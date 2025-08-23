@@ -73,10 +73,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
   Future<List<WeightLog>> _loadWeightData() async {
     try {
-      // Get weight logs from the stream's first value with timeout
-      final weightLogs = await _dataService.weightLogStream
-          .timeout(const Duration(seconds: 10))
-          .first;
+      print('ProgressScreen: Loading weight data');
+
+      // Use the service's new getWeightLogs method for more reliable loading
+      final weightLogs = await _dataService.getWeightLogs();
+
       print('ProgressScreen: Loaded ${weightLogs.length} weight logs');
       return weightLogs;
     } catch (e) {
@@ -433,12 +434,16 @@ class _ProgressScreenState extends State<ProgressScreen> {
               final foodLogs = (progressSnapshot.data?['food'] as List<FoodLog>?) ?? [];
               final activityLogs = (progressSnapshot.data?['activity'] as List<ActivityLog>?) ?? [];
 
-              return FutureBuilder<List<WeightLog>>(
+              return FutureBuilder<List<WeightLog>>(  // <- ADD "return" HERE
                 future: _weightDataFuture,
                 builder: (context, weightSnapshot) {
-                  // Show progress even if weight data is still loading
                   final weightLogs = weightSnapshot.data ?? [];
                   final bool weightDataLoading = weightSnapshot.connectionState == ConnectionState.waiting;
+                  final bool hasError = weightSnapshot.hasError;
+
+                  if (hasError) {
+                    print('ProgressScreen: Weight data error: ${weightSnapshot.error}');
+                  }
 
                   return ListView(
                     padding: const EdgeInsets.all(16.0),
@@ -462,8 +467,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
                         scrollController: _netCalorieScrollController,
                       ),
                       const SizedBox(height: 24),
-                      // Weight chart section with better loading/error handling
-                      _buildWeightChartSection(userProfile, userGoal, weightLogs, foodLogs, activityLogs, weightDataLoading),
+                      // Weight chart section with better error handling
+                      _buildWeightChartSection(userProfile, userGoal, weightLogs, foodLogs, activityLogs, weightDataLoading, hasError),
                       const SizedBox(height: 24),
                       CalorieChartSection(
                         chartData: _prepareCalorieBarData(foodLogs, activityLogs),
@@ -480,8 +485,42 @@ class _ProgressScreenState extends State<ProgressScreen> {
     );
   }
 
+  // lib/src/screens/progress_screen.dart - Updated _buildWeightChartSection method
+
+  // lib/src/screens/progress_screen.dart - Updated _buildWeightChartSection method
+
   Widget _buildWeightChartSection(UserProfile profile, UserGoal goal, List<WeightLog> weightLogs,
-      List<FoodLog> foodLogs, List<ActivityLog> activityLogs, bool isLoading) {
+      List<FoodLog> foodLogs, List<ActivityLog> activityLogs, bool isLoading, bool hasError) {
+
+    if (hasError) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          height: 200,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                const SizedBox(height: 16),
+                const Text('Error loading weight data'),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _loadAllData(); // Retry loading
+                    });
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (isLoading) {
       return Card(
         elevation: 4,
@@ -517,7 +556,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              const Text('Log weight for 2+ days to see a trend.'),
+              Text('Log weight for 2+ days to see a trend. Current logs: ${weightLogs.length}'),
               const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: () {
@@ -533,6 +572,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
       );
     }
 
+    // Default case - show the weight chart
     return WeightChartSection(
       profile: profile,
       goal: goal,

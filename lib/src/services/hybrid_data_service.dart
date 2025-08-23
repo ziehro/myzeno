@@ -36,18 +36,18 @@ class HybridDataService extends ChangeNotifier {
   // Set this to true to test as premium user
   static const bool _debugForcePremium = true; // Change this to test premium features
 
-  // For now, always use cloud storage when user is signed in (regardless of subscription)
-  // This ensures that Firebase auth users get their data from Firebase
+  // Track storage state changes
+  static bool? _lastCloudStorageState;
+
+  // FIXED: Proper hybrid storage logic
   bool get _useCloudStorage {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final hasCloudAccess = _subscriptionService.canAccessCloudSync ||
-        _debugForcePremium;
+    final hasCloudAccess = _subscriptionService.canAccessCloudSync || _debugForcePremium;
 
-    // Use cloud storage if user is signed in (even free users need Firebase for auth)
-    final useCloud = currentUser != null;
+    // Only use cloud storage if user is signed in AND has premium subscription
+    final useCloud = currentUser != null && hasCloudAccess;
 
-    print('HybridDataService: User signed in: ${currentUser !=
-        null}, Has cloud access: $hasCloudAccess, Debug force premium: $_debugForcePremium, Using cloud: $useCloud');
+    print('HybridDataService: User signed in: ${currentUser != null}, Has cloud access: $hasCloudAccess, Using cloud: $useCloud');
 
     return useCloud;
   }
@@ -85,8 +85,7 @@ class HybridDataService extends ChangeNotifier {
 
     // Refresh cache based on age
     if (_lastProfileCacheUpdate == null) return true;
-    return DateTime.now().difference(_lastProfileCacheUpdate!).compareTo(
-        _profileCacheLife) > 0;
+    return DateTime.now().difference(_lastProfileCacheUpdate!).compareTo(_profileCacheLife) > 0;
   }
 
   // --- PROFILE & GOAL METHODS (HEAVILY CACHED) ---
@@ -112,8 +111,7 @@ class HybridDataService extends ChangeNotifier {
       try {
         final profile = await _firebaseService.getUserProfile();
         if (profile != null) {
-          print(
-              'HybridDataService: Got profile from Firebase: ${profile.email}');
+          print('HybridDataService: Got profile from Firebase: ${profile.email}');
           _cachedProfile = profile;
           _lastProfileCacheUpdate = DateTime.now();
         } else {
@@ -129,8 +127,7 @@ class HybridDataService extends ChangeNotifier {
       try {
         final profile = await _localService.getUserProfile();
         if (profile != null) {
-          print('HybridDataService: Got profile from local storage: ${profile
-              .email}');
+          print('HybridDataService: Got profile from local storage: ${profile.email}');
         } else {
           print('HybridDataService: No profile found in local storage');
         }
@@ -163,8 +160,7 @@ class HybridDataService extends ChangeNotifier {
       try {
         final goal = await _firebaseService.getUserGoal();
         if (goal != null) {
-          print('HybridDataService: Got goal from Firebase: ${goal
-              .lbsToLose} lbs in ${goal.days} days');
+          print('HybridDataService: Got goal from Firebase: ${goal.lbsToLose} lbs in ${goal.days} days');
           _cachedGoal = goal;
           _lastProfileCacheUpdate = DateTime.now();
         } else {
@@ -180,8 +176,7 @@ class HybridDataService extends ChangeNotifier {
       try {
         final goal = await _localService.getUserGoal();
         if (goal != null) {
-          print('HybridDataService: Got goal from local storage: ${goal
-              .lbsToLose} lbs in ${goal.days} days');
+          print('HybridDataService: Got goal from local storage: ${goal.lbsToLose} lbs in ${goal.days} days');
         } else {
           print('HybridDataService: No goal found in local storage');
         }
@@ -193,8 +188,7 @@ class HybridDataService extends ChangeNotifier {
     }
   }
 
-  Future<void> saveUserProfileAndGoal(UserProfile profile,
-      UserGoal goal) async {
+  Future<void> saveUserProfileAndGoal(UserProfile profile, UserGoal goal) async {
     try {
       if (_useCloudStorage) {
         await _firebaseService.saveUserProfileAndGoal(profile, goal);
@@ -320,8 +314,7 @@ class HybridDataService extends ChangeNotifier {
   // --- OPTIMIZED STREAM METHODS (SINGLE CONTROLLERS) ---
 
   Stream<List<FoodLog>> get todaysFoodLogStream {
-    print(
-        'HybridDataService: Getting today\'s food log stream, useCloud: $_useCloudStorage');
+    print('HybridDataService: Getting today\'s food log stream, useCloud: $_useCloudStorage');
 
     if (_useCloudStorage) {
       // Create a new stream each time to avoid shared controller issues
@@ -331,8 +324,7 @@ class HybridDataService extends ChangeNotifier {
         return <FoodLog>[];
       })
           .map((logs) {
-        print('HybridDataService: Received ${logs
-            .length} food logs from Firebase');
+        print('HybridDataService: Received ${logs.length} food logs from Firebase');
         return logs;
       });
     } else {
@@ -341,8 +333,7 @@ class HybridDataService extends ChangeNotifier {
       return Stream.periodic(const Duration(seconds: 3), (_) async {
         try {
           final logs = await _localService.getTodaysFoodLogs();
-          print('HybridDataService: Got ${logs
-              .length} food logs from local storage');
+          print('HybridDataService: Got ${logs.length} food logs from local storage');
           return logs;
         } catch (e) {
           print('HybridDataService: Error getting local food logs: $e');
@@ -353,8 +344,7 @@ class HybridDataService extends ChangeNotifier {
   }
 
   Stream<List<ActivityLog>> get todaysActivityLogStream {
-    print(
-        'HybridDataService: Getting today\'s activity log stream, useCloud: $_useCloudStorage');
+    print('HybridDataService: Getting today\'s activity log stream, useCloud: $_useCloudStorage');
 
     if (_useCloudStorage) {
       // Create a new stream each time to avoid shared controller issues
@@ -364,8 +354,7 @@ class HybridDataService extends ChangeNotifier {
         return <ActivityLog>[];
       })
           .map((logs) {
-        print('HybridDataService: Received ${logs
-            .length} activity logs from Firebase');
+        print('HybridDataService: Received ${logs.length} activity logs from Firebase');
         return logs;
       });
     } else {
@@ -373,8 +362,7 @@ class HybridDataService extends ChangeNotifier {
       return Stream.periodic(const Duration(seconds: 3), (_) async {
         try {
           final logs = await _localService.getTodaysActivityLogs();
-          print('HybridDataService: Got ${logs
-              .length} activity logs from local storage');
+          print('HybridDataService: Got ${logs.length} activity logs from local storage');
           return logs;
         } catch (e) {
           print('HybridDataService: Error getting local activity logs: $e');
@@ -384,25 +372,82 @@ class HybridDataService extends ChangeNotifier {
     }
   }
 
+  // --- WEIGHT STREAM METHODS ---
+
+  Stream<List<WeightLog>> get weightLogStream {
+    print('HybridDataService: Getting weight log stream, useCloud: $_useCloudStorage');
+
+    if (_useCloudStorage) {
+      // Use direct Firebase stream without intermediate controllers
+      return _firebaseService.weightLogStream
+          .handleError((error) {
+        print('HybridDataService: Error in weight logs stream: $error');
+        return <WeightLog>[];
+      })
+          .map((logs) {
+        print('HybridDataService: Received ${logs.length} weight logs from Firebase');
+        return logs;
+      });
+    } else {
+      print('HybridDataService: Using local storage for weight logs');
+      // Simpler local storage stream
+      return Stream.periodic(const Duration(seconds: 2), (_) async {
+        try {
+          final maxLogs = _subscriptionService.maxWeightLogs == -1 ? null : _subscriptionService.maxWeightLogs;
+          final logs = await _localService.getWeightLogs(limit: maxLogs);
+          print('HybridDataService: Got ${logs.length} weight logs from local storage');
+          return logs;
+        } catch (e) {
+          print('HybridDataService: Error getting local weight logs: $e');
+          return <WeightLog>[];
+        }
+      }).asyncMap((future) => future).distinct();
+    }
+  }
+
+  // Add this new method for more reliable weight log fetching:
+  Future<List<WeightLog>> getWeightLogs() async {
+    try {
+      print('HybridDataService: Getting weight logs as Future, useCloud: $_useCloudStorage');
+
+      if (_useCloudStorage) {
+        // For cloud storage, get first emission from stream
+        final logs = await _firebaseService.weightLogStream.first.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            print('HybridDataService: Weight logs timeout, returning empty list');
+            return <WeightLog>[];
+          },
+        );
+        print('HybridDataService: Got ${logs.length} weight logs from Firebase');
+        return logs;
+      } else {
+        // For local storage, get directly
+        final maxLogs = _subscriptionService.maxWeightLogs == -1 ? null : _subscriptionService.maxWeightLogs;
+        final logs = await _localService.getWeightLogs(limit: maxLogs);
+        print('HybridDataService: Got ${logs.length} weight logs from local storage');
+        return logs;
+      }
+    } catch (e) {
+      print('HybridDataService: Error getting weight logs: $e');
+      return [];
+    }
+  }
+
   // --- RECENT DATA (FOR PROGRESS SCREEN) - USE FUTURE INSTEAD OF STREAM ---
 
   Future<List<FoodLog>> getRecentFoodLogs() async {
     try {
-      print(
-          'HybridDataService: Getting recent food logs, useCloud: $_useCloudStorage');
+      print('HybridDataService: Getting recent food logs, useCloud: $_useCloudStorage');
       if (_useCloudStorage) {
         // Use one-time fetch instead of continuous stream
         final logs = await _firebaseService.getRecentFoodLogs();
-        print('HybridDataService: Got ${logs
-            .length} recent food logs from Firebase');
+        print('HybridDataService: Got ${logs.length} recent food logs from Firebase');
         return logs;
       } else {
-        final maxDays = _subscriptionService.maxHistoryDays == -1
-            ? 365
-            : _subscriptionService.maxHistoryDays;
+        final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
         final logs = await _localService.getRecentFoodLogs(days: maxDays);
-        print('HybridDataService: Got ${logs
-            .length} recent food logs from local storage');
+        print('HybridDataService: Got ${logs.length} recent food logs from local storage');
         return logs;
       }
     } catch (e) {
@@ -413,21 +458,16 @@ class HybridDataService extends ChangeNotifier {
 
   Future<List<ActivityLog>> getRecentActivityLogs() async {
     try {
-      print(
-          'HybridDataService: Getting recent activity logs, useCloud: $_useCloudStorage');
+      print('HybridDataService: Getting recent activity logs, useCloud: $_useCloudStorage');
       if (_useCloudStorage) {
         // Use one-time fetch instead of continuous stream
         final logs = await _firebaseService.getRecentActivityLogs();
-        print('HybridDataService: Got ${logs
-            .length} recent activity logs from Firebase');
+        print('HybridDataService: Got ${logs.length} recent activity logs from Firebase');
         return logs;
       } else {
-        final maxDays = _subscriptionService.maxHistoryDays == -1
-            ? 365
-            : _subscriptionService.maxHistoryDays;
+        final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
         final logs = await _localService.getRecentActivityLogs(days: maxDays);
-        print('HybridDataService: Got ${logs
-            .length} recent activity logs from local storage');
+        print('HybridDataService: Got ${logs.length} recent activity logs from local storage');
         return logs;
       }
     } catch (e) {
@@ -444,9 +484,7 @@ class HybridDataService extends ChangeNotifier {
           .asyncMap((future) => future);
     } else {
       return Stream.periodic(const Duration(seconds: 5), (_) async {
-        final maxDays = _subscriptionService.maxHistoryDays == -1
-            ? 365
-            : _subscriptionService.maxHistoryDays;
+        final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
         return await _localService.getRecentFoodLogs(days: maxDays);
       }).asyncMap((future) => future).distinct();
     }
@@ -455,49 +493,12 @@ class HybridDataService extends ChangeNotifier {
   Stream<List<ActivityLog>> get recentActivityLogStream {
     if (_useCloudStorage) {
       // Use much less frequent updates for progress data
-      return Stream.periodic(
-          _streamRefreshInterval, (_) => getRecentActivityLogs())
+      return Stream.periodic(_streamRefreshInterval, (_) => getRecentActivityLogs())
           .asyncMap((future) => future);
     } else {
       return Stream.periodic(const Duration(seconds: 5), (_) async {
-        final maxDays = _subscriptionService.maxHistoryDays == -1
-            ? 365
-            : _subscriptionService.maxHistoryDays;
+        final maxDays = _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays;
         return await _localService.getRecentActivityLogs(days: maxDays);
-      }).asyncMap((future) => future).distinct();
-    }
-  }
-
-  Stream<List<WeightLog>> get weightLogStream {
-    if (_useCloudStorage) {
-      // Use single controller to prevent multiple Firebase listeners
-      if (_weightController != null && !_weightController!.isClosed) {
-        return _weightController!.stream;
-      }
-
-      _weightController = StreamController<List<WeightLog>>.broadcast();
-
-      // Use the optimized Firebase stream directly
-      _firebaseService.weightLogStream.listen(
-            (logs) {
-          if (!_weightController!.isClosed) {
-            _weightController!.add(logs);
-          }
-        },
-        onError: (error) {
-          if (!_weightController!.isClosed) {
-            _weightController!.addError(error);
-          }
-        },
-      );
-
-      return _weightController!.stream;
-    } else {
-      return Stream.periodic(const Duration(seconds: 5), (_) async {
-        final maxLogs = _subscriptionService.maxWeightLogs == -1
-            ? null
-            : _subscriptionService.maxWeightLogs;
-        return await _localService.getWeightLogs(limit: maxLogs);
       }).asyncMap((future) => future).distinct();
     }
   }
@@ -524,80 +525,196 @@ class HybridDataService extends ChangeNotifier {
     }
   }
 
-  // --- PREMIUM UPGRADE MIGRATION ---
+  // --- DATA MIGRATION METHODS ---
 
-  Future<void> migrateToCloudStorage() async {
-    if (!_subscriptionService.canAccessCloudSync) {
-      throw Exception('Cloud sync not available in current plan');
+  // ENHANCED: Handle subscription changes with data migration
+  void onSubscriptionChanged() {
+    final wasUsingCloud = _lastCloudStorageState ?? false;
+    final nowUsingCloud = _useCloudStorage;
+
+    print('HybridDataService: Subscription changed - Was using cloud: $wasUsingCloud, Now using cloud: $nowUsingCloud');
+
+    _clearCache(); // Clear cache when subscription changes
+
+    if (!wasUsingCloud && nowUsingCloud) {
+      // User upgraded: Free → Premium
+      print('HybridDataService: User upgraded to premium, migrating to cloud');
+      _migrateLocalToCloud();
+    } else if (wasUsingCloud && !nowUsingCloud) {
+      // User downgraded: Premium → Free
+      print('HybridDataService: User downgraded to free, migrating to local');
+      _migrateCloudToLocal();
     }
 
+    _lastCloudStorageState = nowUsingCloud;
+    notifyListeners();
+  }
+
+  // ENHANCED: Migrate from local storage to cloud (upgrade)
+  Future<void> _migrateLocalToCloud() async {
     try {
+      print('HybridDataService: Starting migration from local to cloud');
+
       // Export all local data
       final localData = await _localService.exportAllData();
 
-      // Save profile and goal to cloud using existing method
       if (localData['profile'] != null && localData['goal'] != null) {
         final profile = UserProfile.fromJson(localData['profile']);
         final goal = UserGoal.fromJson(localData['goal']);
         await _firebaseService.saveUserProfileAndGoal(profile, goal);
 
-        // Update cache immediately
+        // Update cache
         _cachedProfile = profile;
         _cachedGoal = goal;
         _lastProfileCacheUpdate = DateTime.now();
+
+        print('HybridDataService: Migrated profile and goal to cloud');
       }
 
-      // Migrate food logs (in batches to avoid overwhelming Firebase)
-      final foodLogs = (localData['foodLogs'] as List? ?? [])
-          .map((json) => FoodLog.fromJson(json, ''))
-          .toList();
-
-      for (int i = 0; i < foodLogs.length; i += 10) {
-        final batch = foodLogs.skip(i).take(10);
-        for (final log in batch) {
-          await _firebaseService.addFoodLog(log);
-        }
-        // Small delay between batches to prevent rate limiting
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-
-      // Migrate activity logs (in batches)
-      final activityLogs = (localData['activityLogs'] as List? ?? [])
-          .map((json) => ActivityLog.fromJson(json, ''))
-          .toList();
-
-      for (int i = 0; i < activityLogs.length; i += 10) {
-        final batch = activityLogs.skip(i).take(10);
-        for (final log in batch) {
-          await _firebaseService.addActivityLog(log);
-        }
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-
-      // Migrate weight logs (in batches)
-      final weightLogs = (localData['weightLogs'] as List? ?? [])
-          .map((json) => WeightLog.fromJson(json, ''))
-          .toList();
-
-      for (int i = 0; i < weightLogs.length; i += 10) {
-        final batch = weightLogs.skip(i).take(10);
-        for (final log in batch) {
-          await _firebaseService.addWeightLog(log);
-        }
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
+      // Migrate data in batches to avoid overwhelming Firebase
+      await _migrateFoodLogsToCloud(localData);
+      await _migrateActivityLogsToCloud(localData);
+      await _migrateWeightLogsToCloud(localData);
 
       // Clear local data after successful migration
       await _localService.clearAllData();
 
-      notifyListeners();
+      print('HybridDataService: Successfully migrated all data to cloud and cleared local storage');
+
+      // Show success message
+      _showMigrationSuccessMessage('Data successfully synced to cloud!');
+
     } catch (e) {
-      throw Exception('Failed to migrate data to cloud: $e');
+      print('HybridDataService: Error migrating to cloud: $e');
+      _showMigrationErrorMessage('Failed to sync data to cloud. Please try again.');
     }
   }
 
-  // --- DATA EXPORT (Premium feature) ---
+  // NEW: Migrate from cloud storage to local (downgrade)
+  Future<void> _migrateCloudToLocal() async {
+    try {
+      print('HybridDataService: Starting migration from cloud to local');
 
+      // Get all data from Firebase
+      final profile = await _firebaseService.getUserProfile();
+      final goal = await _firebaseService.getUserGoal();
+      final foodLogs = await _firebaseService.getRecentFoodLogs();
+      final activityLogs = await _firebaseService.getRecentActivityLogs();
+      final weightLogs = await _firebaseService.weightLogStream.first.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => <WeightLog>[],
+      );
+
+      // Save to local storage
+      if (profile != null) {
+        await _localService.saveUserProfile(profile);
+        _cachedProfile = profile;
+        print('HybridDataService: Migrated profile to local storage');
+      }
+
+      if (goal != null) {
+        await _localService.saveUserGoal(goal);
+        _cachedGoal = goal;
+        print('HybridDataService: Migrated goal to local storage');
+      }
+
+      // Migrate logs in batches
+      for (final log in foodLogs) {
+        await _localService.addFoodLog(log);
+      }
+      print('HybridDataService: Migrated ${foodLogs.length} food logs to local storage');
+
+      for (final log in activityLogs) {
+        await _localService.addActivityLog(log);
+      }
+      print('HybridDataService: Migrated ${activityLogs.length} activity logs to local storage');
+
+      for (final log in weightLogs) {
+        await _localService.addWeightLog(log);
+      }
+      print('HybridDataService: Migrated ${weightLogs.length} weight logs to local storage');
+
+      _lastProfileCacheUpdate = DateTime.now();
+
+      print('HybridDataService: Successfully migrated all data to local storage');
+
+      // Show success message
+      _showMigrationSuccessMessage('Data downloaded and saved locally!');
+
+    } catch (e) {
+      print('HybridDataService: Error migrating to local: $e');
+      _showMigrationErrorMessage('Failed to download data. Your cloud data is still safe.');
+    }
+  }
+
+  // Helper methods for batch migration to cloud
+  Future<void> _migrateFoodLogsToCloud(Map<String, dynamic> localData) async {
+    final foodLogs = (localData['foodLogs'] as List? ?? [])
+        .map((json) => FoodLog.fromJson(json, ''))
+        .toList();
+
+    for (int i = 0; i < foodLogs.length; i += 10) {
+      final batch = foodLogs.skip(i).take(10);
+      for (final log in batch) {
+        await _firebaseService.addFoodLog(log);
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    print('HybridDataService: Migrated ${foodLogs.length} food logs to cloud');
+  }
+
+  Future<void> _migrateActivityLogsToCloud(Map<String, dynamic> localData) async {
+    final activityLogs = (localData['activityLogs'] as List? ?? [])
+        .map((json) => ActivityLog.fromJson(json, ''))
+        .toList();
+
+    for (int i = 0; i < activityLogs.length; i += 10) {
+      final batch = activityLogs.skip(i).take(10);
+      for (final log in batch) {
+        await _firebaseService.addActivityLog(log);
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    print('HybridDataService: Migrated ${activityLogs.length} activity logs to cloud');
+  }
+
+  Future<void> _migrateWeightLogsToCloud(Map<String, dynamic> localData) async {
+    final weightLogs = (localData['weightLogs'] as List? ?? [])
+        .map((json) => WeightLog.fromJson(json, ''))
+        .toList();
+
+    for (int i = 0; i < weightLogs.length; i += 10) {
+      final batch = weightLogs.skip(i).take(10);
+      for (final log in batch) {
+        await _firebaseService.addWeightLog(log);
+      }
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    print('HybridDataService: Migrated ${weightLogs.length} weight logs to cloud');
+  }
+
+  // Helper methods for user feedback
+  void _showMigrationSuccessMessage(String message) {
+    // This would show a snackbar or notification to the user
+    // You'd need to implement this based on your UI framework
+    print('SUCCESS: $message');
+  }
+
+  void _showMigrationErrorMessage(String message) {
+    // This would show an error dialog to the user
+    // You'd need to implement this based on your UI framework
+    print('ERROR: $message');
+  }
+
+  // LEGACY: Keep the old method for manual migration (if needed)
+  Future<void> migrateToCloudStorage() async {
+    if (!_subscriptionService.canAccessCloudSync) {
+      throw Exception('Cloud sync not available in current plan');
+    }
+    await _migrateLocalToCloud();
+  }
+
+  // --- DATA EXPORT (Premium feature) ---
   Future<Map<String, dynamic>> exportData() async {
     if (!_subscriptionService.canExportData) {
       throw Exception('Data export is a premium feature');
@@ -612,15 +729,12 @@ class HybridDataService extends ChangeNotifier {
   }
 
   // --- DATA MAINTENANCE ---
-
   Future<void> performMaintenance() async {
     try {
       if (!_useCloudStorage) {
         // Clean up old data for free users
         await _localService.cleanupOldData(
-          keepDays: _subscriptionService.maxHistoryDays == -1
-              ? 365
-              : _subscriptionService.maxHistoryDays,
+          keepDays: _subscriptionService.maxHistoryDays == -1 ? 365 : _subscriptionService.maxHistoryDays,
         );
       }
     } catch (e) {
@@ -629,7 +743,6 @@ class HybridDataService extends ChangeNotifier {
   }
 
   // --- AUTH METHODS ---
-
   Future<void> signOut() async {
     try {
       _clearCache(); // Clear all caches on sign out
@@ -645,27 +758,6 @@ class HybridDataService extends ChangeNotifier {
       print('Error signing out: $e');
       rethrow;
     }
-  }
-
-  // --- SUBSCRIPTION CHANGE HANDLERS ---
-
-  void onSubscriptionChanged() {
-    _clearCache(); // Clear cache when subscription changes
-
-    if (_subscriptionService.canAccessCloudSync) {
-      // User upgraded to premium - offer to migrate data
-      _showMigrationDialog();
-    } else {
-      // User downgraded - data stays in cloud but app uses local storage
-    }
-    notifyListeners();
-  }
-
-  void _showMigrationDialog() {
-    // Auto-migration for now
-    migrateToCloudStorage().catchError((e) {
-      debugPrint('Auto-migration failed: $e');
-    });
   }
 
   @override

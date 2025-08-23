@@ -57,6 +57,17 @@ class NetCalorieChartSection extends StatelessWidget {
       barGroups.length * 50.0 + extraRightPadding,
     );
 
+    // --- UPDATED: Auto-scroll to the right (today's date) after first frame ---
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scrollController.hasClients && scrollController.position.maxScrollExtent > 0) {
+        scrollController.animateTo(
+          scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
