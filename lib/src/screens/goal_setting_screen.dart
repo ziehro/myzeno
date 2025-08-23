@@ -6,6 +6,8 @@ import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/screens/auth_wrapper.dart';
 import 'package:zeno/src/services/firebase_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:zeno/src/screens/login_screen.dart';
 
 class GoalSettingScreen extends StatefulWidget {
   final UserProfile? userProfile;

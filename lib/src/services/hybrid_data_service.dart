@@ -33,19 +33,21 @@ class HybridDataService extends ChangeNotifier {
   static const Duration _streamRefreshInterval = Duration(minutes: 3);
 
   // For development: Allow override to test premium features
-  // Set this to true to test as premium user
-  static const bool _debugForcePremium = true; // Change this to test premium features
+  // Set this to false in production
+  static const bool _debugForcePremium = false; // Change this to false for production
 
   // Track storage state changes
   static bool? _lastCloudStorageState;
 
-  // FIXED: Proper hybrid storage logic
+  // FIXED: Proper hybrid storage logic - but keep Firebase for auth users initially
   bool get _useCloudStorage {
     final currentUser = FirebaseAuth.instance.currentUser;
     final hasCloudAccess = _subscriptionService.canAccessCloudSync || _debugForcePremium;
 
-    // Only use cloud storage if user is signed in AND has premium subscription
-    final useCloud = currentUser != null && hasCloudAccess;
+    // IMPORTANT: If user is signed in, always use cloud storage initially
+    // This prevents breaking existing users who have data in Firebase
+    // Later we can add migration logic when they downgrade
+    final useCloud = currentUser != null;
 
     print('HybridDataService: User signed in: ${currentUser != null}, Has cloud access: $hasCloudAccess, Using cloud: $useCloud');
 
