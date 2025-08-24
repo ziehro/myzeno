@@ -8,6 +8,8 @@ import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/models/tip.dart';
 import 'package:zeno/src/models/recipe.dart';
 import 'dart:async';
+import 'package:zeno/src/services/subscription_service.dart';
+import 'package:zeno/src/models/alcohol_entry.dart';
 
 class FirebaseService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -443,9 +445,12 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
 
-    // Only update frequent items occasionally
+    // Get subscription service to check limits
+    final subscriptionService = SubscriptionService();
+    final limit = subscriptionService.isPremium ? 50 : 8; // Premium gets 50, free gets 8
+
     return userDoc.collection('frequent_food_logs')
-        .limit(8) // Reduced limit
+        .limit(limit)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => FoodLog.fromJson(doc.data(), doc.id)).toList())
         .handleError((error) {
@@ -458,9 +463,12 @@ class FirebaseService {
     final userDoc = _userDocRef;
     if (userDoc == null) return Stream.value([]);
 
-    // Only update frequent items occasionally
+    // Get subscription service to check limits
+    final subscriptionService = SubscriptionService();
+    final limit = subscriptionService.isPremium ? 50 : 8; // Premium gets 50, free gets 8
+
     return userDoc.collection('frequent_activity_logs')
-        .limit(8) // Reduced limit
+        .limit(limit)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => ActivityLog.fromJson(doc.data(), doc.id)).toList())
         .handleError((error) {
@@ -653,7 +661,117 @@ class FirebaseService {
     }
   }
 
-  // --- BATCH OPERATIONS ---
+  Future<void> addAlcoholEntry(AlcoholEntry entry) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('alcohol_entries').add(entry.toJson());
+      print('Added alcohol entry: ${entry.name}');
+    } catch (e) {
+      print('Error adding alcohol entry: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateAlcoholEntry(AlcoholEntry entry) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('alcohol_entries').doc(entry.id).update(entry.toJson());
+      print('Updated alcohol entry: ${entry.name}');
+    } catch (e) {
+      print('Error updating alcohol entry: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteAlcoholEntry(String entryId) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) throw Exception("User not logged in");
+
+    try {
+      await userDoc.collection('alcohol_entries').doc(entryId).delete();
+      print('Deleted alcohol entry: $entryId');
+    } catch (e) {
+      print('Error deleting alcohol entry: $e');
+      rethrow;
+    }
+  }
+
+  Stream<List<AlcoholEntry>> get alcoholEntriesStream {
+    final userDoc = _userDocRef;
+    if (userDoc == null) {
+      print('FirebaseService: No user document reference for alcohol entries');
+      return Stream.value([]);
+    }
+
+    print('FirebaseService: Creating alcohol entries stream');
+
+    return userDoc.collection('alcohol_entries')
+        .orderBy('date', descending: true)
+        .limit(100) // Reasonable limit
+        .snapshots()
+        .map((snapshot) {
+      try {
+        print('FirebaseService: Processing ${snapshot.docs.length} alcohol entry documents');
+        final entries = snapshot.docs.map((doc) {
+          try {
+            return AlcoholEntry.fromJson(doc.data(), doc.id);
+          } catch (e) {
+            print('FirebaseService: Error parsing alcohol entry ${doc.id}: $e');
+            return null;
+          }
+        }).where((entry) => entry != null).cast<AlcoholEntry>().toList();
+
+        print('FirebaseService: Successfully parsed ${entries.length} alcohol entries');
+        return entries;
+      } catch (e) {
+        print('FirebaseService: Error processing alcohol entries: $e');
+        return <AlcoholEntry>[];
+      }
+    })
+        .handleError((error) {
+      print('FirebaseService: Error in alcohol entries stream: $error');
+      return <AlcoholEntry>[];
+    });
+  }
+
+  Future<List<AlcoholEntry>> getRecentAlcoholEntries({int days = 30}) async {
+    final userDoc = _userDocRef;
+    if (userDoc == null) {
+      print('FirebaseService: No user document for recent alcohol entries');
+      return [];
+    }
+
+    try {
+      final cutoffDate = DateTime.now().subtract(Duration(days: days));
+
+      print('FirebaseService: Querying recent alcohol entries from ${cutoffDate.toIso8601String()}');
+
+      final snapshot = await userDoc.collection('alcohol_entries')
+          .where('date', isGreaterThanOrEqualTo: cutoffDate.toIso8601String())
+          .orderBy('date', descending: true)
+          .limit(50)
+          .get();
+
+      final entries = snapshot.docs.map((doc) {
+        try {
+          return AlcoholEntry.fromJson(doc.data(), doc.id);
+        } catch (e) {
+          print('FirebaseService: Error parsing recent alcohol entry ${doc.id}: $e');
+          return null;
+        }
+      }).where((entry) => entry != null).cast<AlcoholEntry>().toList();
+
+      print('FirebaseService: Retrieved ${entries.length} recent alcohol entries');
+      return entries;
+    } catch (e) {
+      print('Error getting recent alcohol entries: $e');
+      return [];
+    }
+  }
 
   Future<void> batchUpdateQuantities(List<FoodLog> foodUpdates, List<ActivityLog> activityUpdates) async {
     final batch = _firestore.batch();

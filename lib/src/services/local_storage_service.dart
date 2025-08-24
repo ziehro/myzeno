@@ -6,6 +6,7 @@ import 'package:zeno/src/models/activity_log.dart';
 import 'package:zeno/src/models/weight_log.dart';
 import 'package:zeno/src/models/user_profile.dart';
 import 'package:zeno/src/models/user_goal.dart';
+import 'package:zeno/src/services/subscription_service.dart';
 
 class LocalStorageService {
   static final LocalStorageService _instance = LocalStorageService._internal();
@@ -394,10 +395,15 @@ class LocalStorageService {
 
   Future<List<FoodLog>> getFrequentFoodLogs() async {
     final db = await database;
+
+    // Get subscription service to check limits
+    final subscriptionService = SubscriptionService();
+    final limit = subscriptionService.isPremium ? 50 : 10; // Premium gets 50, free gets 10
+
     final List<Map<String, dynamic>> maps = await db.query(
       'frequent_foods',
       orderBy: 'usage_count DESC, last_used DESC',
-      limit: 10,
+      limit: limit,
     );
 
     return maps.map((map) => FoodLog(
@@ -411,10 +417,15 @@ class LocalStorageService {
 
   Future<List<ActivityLog>> getFrequentActivityLogs() async {
     final db = await database;
+
+    // Get subscription service to check limits
+    final subscriptionService = SubscriptionService();
+    final limit = subscriptionService.isPremium ? 50 : 10; // Premium gets 50, free gets 10
+
     final List<Map<String, dynamic>> maps = await db.query(
       'frequent_activities',
       orderBy: 'usage_count DESC, last_used DESC',
-      limit: 10,
+      limit: limit,
     );
 
     return maps.map((map) => ActivityLog(

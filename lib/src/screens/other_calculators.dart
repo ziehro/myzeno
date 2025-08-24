@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zeno/src/services/firebase_service.dart';
 import 'package:zeno/src/models/food_log.dart';
+import 'package:zeno/src/models/alcohol_entry.dart';
 
 // OTHERS CALCULATOR TAB
 class OtherCalculatorTab extends StatefulWidget {
@@ -51,7 +52,7 @@ class _OtherCalculatorTabState extends State<OtherCalculatorTab> {
   }
 }
 
-// Alcohol Calculator (based on your Android code)
+
 class AlcoholCalculator extends StatefulWidget {
   const AlcoholCalculator({super.key});
 
@@ -59,7 +60,7 @@ class AlcoholCalculator extends StatefulWidget {
   State<AlcoholCalculator> createState() => _AlcoholCalculatorState();
 }
 
-class _AlcoholCalculatorState extends State<AlcoholCalculator> {
+class _AlcoholCalculatorState extends State<AlcoholCalculator> with SingleTickerProviderStateMixin {
   final FirebaseService _firebaseService = FirebaseService();
   final _drinkNameController = TextEditingController();
   final _alcoholPercentController = TextEditingController();
@@ -71,6 +72,26 @@ class _AlcoholCalculatorState extends State<AlcoholCalculator> {
   double _alcoholPerDollar = 0;
   double _totalCalories = 0;
   Color _valueColor = Colors.green;
+
+  late TabController _tabController;
+  bool _hasCalculated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _drinkNameController.dispose();
+    _alcoholPercentController.dispose();
+    _volumeController.dispose();
+    _quantityController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
 
   void _calculate() {
     final alcoholPercent = double.tryParse(_alcoholPercentController.text) ?? 0;
@@ -89,7 +110,7 @@ class _AlcoholCalculatorState extends State<AlcoholCalculator> {
         // Alcohol calories (7 calories per gram, alcohol density ~0.789 g/ml)
         _totalCalories = _totalAlcohol * 0.789 * 7;
 
-        // Color coding based on value (like your original)
+        // Color coding based on value
         if (_alcoholPerDollar >= 11) {
           _valueColor = Colors.green;
         } else if (_alcoholPerDollar >= 8) {
@@ -97,7 +118,57 @@ class _AlcoholCalculatorState extends State<AlcoholCalculator> {
         } else {
           _valueColor = Colors.red;
         }
+
+        _hasCalculated = true;
       });
+    }
+  }
+
+  void _saveEntry() async {
+    if (!_hasCalculated || _drinkNameController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please calculate first and enter a drink name'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final entry = AlcoholEntry(
+        id: '',
+        name: _drinkNameController.text,
+        alcoholPercent: double.parse(_alcoholPercentController.text),
+        volume: double.parse(_volumeController.text),
+        quantity: int.parse(_quantityController.text),
+        price: double.parse(_priceController.text),
+        date: DateTime.now(),
+        totalAlcohol: _totalAlcohol,
+        alcoholPerDollar: _alcoholPerDollar,
+        totalCalories: _totalCalories,
+      );
+
+      await _firebaseService.addAlcoholEntry(entry);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved "${entry.name}" to your alcohol history!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Switch to history tab to show the saved entry
+      _tabController.animateTo(1);
+
+    } catch (e) {
+      print('Error saving alcohol entry: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error saving entry. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -107,7 +178,7 @@ class _AlcoholCalculatorState extends State<AlcoholCalculator> {
         id: '',
         name: '${_drinkNameController.text} (alcohol)',
         calories: _totalCalories.round(),
-        quantity: 1, // Always add as quantity 1 from calculator
+        quantity: 1,
         date: DateTime.now(),
       );
       _firebaseService.addFoodLog(foodLog);
@@ -121,116 +192,370 @@ class _AlcoholCalculatorState extends State<AlcoholCalculator> {
     }
   }
 
+  void _loadFromHistory(AlcoholEntry entry) {
+    setState(() {
+      _drinkNameController.text = entry.name;
+      _alcoholPercentController.text = entry.alcoholPercent.toString();
+      _volumeController.text = entry.volume.toString();
+      _quantityController.text = entry.quantity.toString();
+      _priceController.text = entry.price.toString();
+      _totalAlcohol = entry.totalAlcohol;
+      _alcoholPerDollar = entry.alcoholPerDollar;
+      _totalCalories = entry.totalCalories;
+      _valueColor = entry.valueColor;
+      _hasCalculated = true;
+    });
+
+    // Switch to calculator tab
+    _tabController.animateTo(0);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Loaded "${entry.name}" into calculator'),
+        backgroundColor: Colors.blue,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Alcohol Calculator', style: Theme.of(context).textTheme.titleLarge),
-            const Text('Calculate alcohol content, value, and calories'),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _drinkNameController,
-              decoration: const InputDecoration(
-                labelText: 'Drink name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _alcoholPercentController,
-              decoration: const InputDecoration(
-                labelText: 'Alcohol percentage',
-                border: OutlineInputBorder(),
-                suffixText: '%',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _volumeController,
-              decoration: const InputDecoration(
-                labelText: 'Volume per container',
-                border: OutlineInputBorder(),
-                suffixText: 'ml',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _quantityController,
-              decoration: const InputDecoration(
-                labelText: 'Quantity',
-                border: OutlineInputBorder(),
-                suffixText: 'containers',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _priceController,
-              decoration: const InputDecoration(
-                  labelText: 'Total price',
-                  border: OutlineInputBorder(),
-                  prefixText: '\$',
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: ElevatedButton(
-                onPressed: _calculate,
-                child: const Text('Calculate'),
-              ),
-            ),
-            if (_totalAlcohol > 0) ...[
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
+      child: Column(
+        children: [
+          // Header with tabs
+          Container(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Alcohol Calculator', style: Theme.of(context).textTheme.titleLarge),
+                const Text('Calculate alcohol content, value, and calories'),
+                const SizedBox(height: 16),
+                TabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    Tab(icon: Icon(Icons.calculate), text: 'Calculator'),
+                    Tab(icon: Icon(Icons.history), text: 'History'),
+                  ],
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Total Alcohol: ${_totalAlcohol.toStringAsFixed(1)} ml',
-                      style: Theme.of(context).textTheme.titleMedium,
+              ],
+            ),
+          ),
+
+          // Tab content
+          SizedBox(
+            height: 500, // Fixed height for the tab view
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildCalculatorTab(),
+                _buildHistoryTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalculatorTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextFormField(
+            controller: _drinkNameController,
+            decoration: const InputDecoration(
+              labelText: 'Drink name',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _alcoholPercentController,
+            decoration: const InputDecoration(
+              labelText: 'Alcohol percentage',
+              border: OutlineInputBorder(),
+              suffixText: '%',
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _hasCalculated = false,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _volumeController,
+            decoration: const InputDecoration(
+              labelText: 'Volume per container',
+              border: OutlineInputBorder(),
+              suffixText: 'ml',
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _hasCalculated = false,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _quantityController,
+            decoration: const InputDecoration(
+              labelText: 'Quantity',
+              border: OutlineInputBorder(),
+              suffixText: 'containers',
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _hasCalculated = false,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _priceController,
+            decoration: const InputDecoration(
+              labelText: 'Total price',
+              border: OutlineInputBorder(),
+              prefixText: '\$',
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _hasCalculated = false,
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: ElevatedButton(
+              onPressed: _calculate,
+              child: const Text('Calculate'),
+            ),
+          ),
+          if (_totalAlcohol > 0) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Total Alcohol: ${_totalAlcohol.toStringAsFixed(1)} ml',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Alcohol per \$: ${_alcoholPerDollar.toStringAsFixed(2)} ml',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: _valueColor,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Alcohol per \$: ${_alcoholPerDollar.toStringAsFixed(2)} ml',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _valueColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _valueColor),
+                    ),
+                    child: Text(
+                      _alcoholPerDollar >= 11 ? 'Excellent Value' :
+                      _alcoholPerDollar >= 8 ? 'Good Value' : 'Poor Value',
+                      style: TextStyle(
                         color: _valueColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Total Calories: ${_totalCalories.toStringAsFixed(0)} kcal',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _saveEntry,
+                          icon: const Icon(Icons.save),
+                          label: const Text('Save Entry'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _addCaloriesToFoodLog,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add to Food Log'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryTab() {
+    return StreamBuilder<List<AlcoholEntry>>(
+      stream: _firebaseService.alcoholEntriesStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text('Error loading history'),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final entries = snapshot.data ?? [];
+
+        if (entries.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.history, size: 48, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                const Text('No saved entries yet'),
+                const SizedBox(height: 8),
+                const Text(
+                  'Calculate and save alcohol entries to see them here',
+                  style: TextStyle(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => _tabController.animateTo(0),
+                  child: const Text('Go to Calculator'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: entries.length,
+          itemBuilder: (context, index) {
+            final entry = entries[index];
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              child: ListTile(
+                title: Text(
+                  entry.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${entry.alcoholPercent}% • ${entry.volume}ml × ${entry.quantity} • \$${entry.price.toStringAsFixed(2)}'),
                     Text(
-                      'Total Calories: ${_totalCalories.toStringAsFixed(0)} kcal',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      '${entry.alcoholPerDollar.toStringAsFixed(2)} ml/\$ • ${entry.valueRating}',
+                      style: TextStyle(
+                        color: entry.valueColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    ElevatedButton.icon(
-                      onPressed: _addCaloriesToFoodLog,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add Calories to Food Log'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
+                    Text(
+                      '${entry.totalAlcohol.toStringAsFixed(1)}ml alcohol • ${entry.totalCalories.toStringAsFixed(0)} kcal',
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                    ),
+                  ],
+                ),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'load':
+                        _loadFromHistory(entry);
+                        break;
+                      case 'delete':
+                        final shouldDelete = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Delete Entry'),
+                            content: Text('Delete "${entry.name}"?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(false),
+                                child: const Text('Cancel'),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.of(context).pop(true),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                child: const Text('Delete'),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (shouldDelete == true) {
+                          try {
+                            await _firebaseService.deleteAlcoholEntry(entry.id);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Entry deleted'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Error deleting entry'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'load',
+                      child: ListTile(
+                        leading: Icon(Icons.input),
+                        title: Text('Load into Calculator'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete, color: Colors.red),
+                        title: Text('Delete Entry'),
                       ),
                     ),
                   ],
                 ),
+                onTap: () => _loadFromHistory(entry),
               ),
-            ],
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }
