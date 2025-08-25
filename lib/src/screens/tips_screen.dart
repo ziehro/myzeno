@@ -54,48 +54,15 @@ class _TipsScreenState extends State<TipsScreen> {
           AppMenuButton(onNavigateToTab: widget.onNavigateToTab),
         ],
       ),
-      body: Column(
-        children: [
-          // DEBUG: Show subscription status
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            color: Colors.yellow.shade100,
-            child: Column(
-              children: [
-                Text('DEBUG INFO:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text('Is Premium: ${_subscriptionService.isPremium}'),
-                Text('Is Free: ${_subscriptionService.isFree}'),
-                Text('Can Access Tips: ${_subscriptionService.canAccessTips}'),
-                Text('Debug Mode: ${_subscriptionService.isDebugMode}'),
-                Text('Debug Premium Override: ${_subscriptionService.debugPremiumOverride}'),
-                Text('Current Tier: ${_subscriptionService.currentTier}'),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (_subscriptionService.isDebugMode) {
-                      await _subscriptionService.toggleDebugPremium();
-                      setState(() {}); // Refresh the UI
-                    }
-                  },
-                  child: Text('Toggle Debug Premium'),
-                ),
-              ],
-            ),
-          ),
-
-          // Main content
-          Expanded(
-            child: _subscriptionService.canAccessTips
-                ? const TipsScreenContent()
-                : PaywallWidget(
-              feature: 'tips',
-              customTitle: '💡 Expert Health Tips & Recipes',
-              customDescription: 'Get access to professionally curated health tips and nutritious recipes to accelerate your wellness journey.',
-              child: const TipsScreenContent(),
-            ),
-          ),
-        ],
+      body: FeatureGate(
+        feature: 'tips',
+        child: const TipsScreenContent(),
+        fallback: PaywallWidget(
+          feature: 'tips',
+          customTitle: '💡 Expert Health Tips & Recipes',
+          customDescription: 'Get access to professionally curated health tips and nutritious recipes to accelerate your wellness journey.',
+          child: const TipsScreenContent(),
+        ),
       ),
     );
   }
@@ -350,10 +317,6 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('tips').snapshots(),
       builder: (context, snapshot) {
-        print('🔍 Tips StreamBuilder state: ${snapshot.connectionState}');
-        print('🔍 Tips has data: ${snapshot.hasData}');
-        print('🔍 Tips docs count: ${snapshot.data?.docs.length ?? 0}');
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: Padding(
@@ -364,7 +327,6 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
         }
 
         if (snapshot.hasError) {
-          print('🔍 Tips error: ${snapshot.error}');
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -408,120 +370,128 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
         }
 
         final docs = snapshot.data!.docs;
-        print('📋 Building tips grid with ${docs.length} tips');
 
-        return Column(
-          children: docs.asMap().entries.map((entry) {
-            final index = entry.key;
-            final doc = entry.value;
-            final data = doc.data() as Map<String, dynamic>;
+        return SizedBox(
+          height: 280, // Fixed height for horizontal scroll
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              final data = doc.data() as Map<String, dynamic>;
+              final title = data['title']?.toString() ?? 'No Title';
+              final content = data['content']?.toString() ?? 'No Content';
 
-            print('📋 Tip $index data: ${data.toString()}');
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Colors.blue.shade50, Colors.green.shade50],
+              return Container(
+                width: 320, // Fixed width for each card
+                margin: const EdgeInsets.only(right: 16),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.blue.shade50, Colors.green.shade50],
+                      ),
                     ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.shade100,
-                                borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(Icons.lightbulb, color: Colors.amber.shade700, size: 20),
                               ),
-                              child: Icon(Icons.lightbulb, color: Colors.amber.shade700, size: 20),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    data['title'] ?? 'No Title',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade800,
-                                    ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue.shade800,
                                   ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    width: double.infinity,
-                                    child: Text(
-                                      data['content'] ?? 'No Content',
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        height: 1.5,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              PopupMenuButton<String>(
+                                onSelected: (value) async {
+                                  if (value == 'delete') {
+                                    final shouldDelete = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('Delete Tip'),
+                                        content: Text('Delete "$title"?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () => Navigator.pop(context, true),
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
                                       ),
+                                    );
+
+                                    if (shouldDelete == true) {
+                                      await doc.reference.delete();
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Tip deleted'), backgroundColor: Colors.green),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: ListTile(
+                                      leading: Icon(Icons.delete, color: Colors.red),
+                                      title: Text('Delete'),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            PopupMenuButton<String>(
-                              onSelected: (value) async {
-                                if (value == 'delete') {
-                                  final shouldDelete = await showDialog<bool>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('Delete Tip'),
-                                      content: Text('Delete "${data['title']}"?'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(context, false),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        ElevatedButton(
-                                          onPressed: () => Navigator.pop(context, true),
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                          child: const Text('Delete'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
+                            ],
+                          ),
+                          const SizedBox(height: 16),
 
-                                  if (shouldDelete == true) {
-                                    await doc.reference.delete();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Tip deleted'), backgroundColor: Colors.green),
-                                    );
-                                  }
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: ListTile(
-                                    leading: Icon(Icons.delete, color: Colors.red),
-                                    title: Text('Delete'),
-                                  ),
+                          // Scrollable content area
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: SelectableText(
+                                content,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  height: 1.6,
+                                  color: Colors.grey.shade700,
                                 ),
-                              ],
+                              ),
                             ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          }).toList(),
+              );
+            },
+          ),
         );
       },
     );
@@ -531,10 +501,6 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('recipes').snapshots(),
       builder: (context, snapshot) {
-        print('🔍 Recipes StreamBuilder state: ${snapshot.connectionState}');
-        print('🔍 Recipes has data: ${snapshot.hasData}');
-        print('🔍 Recipes docs count: ${snapshot.data?.docs.length ?? 0}');
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: Padding(
@@ -545,7 +511,6 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
         }
 
         if (snapshot.hasError) {
-          print('🔍 Recipes error: ${snapshot.error}');
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -589,60 +554,116 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
         }
 
         final docs = snapshot.data!.docs;
-        print('🍳 Building recipes grid with ${docs.length} recipes');
 
-        return Column(
-          children: docs.asMap().entries.map((entry) {
-            final index = entry.key;
-            final doc = entry.value;
-            final data = doc.data() as Map<String, dynamic>;
+        return SizedBox(
+          height: 350, // Taller height for recipes with more content
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              final data = doc.data() as Map<String, dynamic>;
+              final name = data['name']?.toString() ?? 'No Name';
+              final ingredients = data['ingredients']?.toString() ?? 'No Ingredients';
+              final instructions = data['instructions']?.toString() ?? 'No Instructions';
 
-            print('🍳 Recipe $index data: ${data.toString()}');
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Colors.orange.shade50, Colors.red.shade50],
+              return Container(
+                width: 340, // Slightly wider for recipes
+                margin: const EdgeInsets.only(right: 16),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.orange.shade50, Colors.red.shade50],
+                      ),
                     ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.shade100,
-                                borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(Icons.restaurant_menu, color: Colors.orange.shade700, size: 20),
                               ),
-                              child: Icon(Icons.restaurant_menu, color: Colors.orange.shade700, size: 20),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange.shade800,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              PopupMenuButton<String>(
+                                onSelected: (value) async {
+                                  if (value == 'delete') {
+                                    final shouldDelete = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('Delete Recipe'),
+                                        content: Text('Delete "$name"?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () => Navigator.pop(context, true),
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (shouldDelete == true) {
+                                      await doc.reference.delete();
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Recipe deleted'), backgroundColor: Colors.green),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: ListTile(
+                                      leading: Icon(Icons.delete, color: Colors.red),
+                                      title: Text('Delete'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Scrollable content area
+                          Expanded(
+                            child: SingleChildScrollView(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    data['name'] ?? 'No Name',
-                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange.shade800,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-
+                                  // Ingredients Section
                                   Text(
                                     "Ingredients:",
                                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -651,18 +672,17 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  Container(
-                                    width: double.infinity,
-                                    child: Text(
-                                      data['ingredients'] ?? 'No Ingredients',
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        height: 1.5,
-                                      ),
+                                  SelectableText(
+                                    ingredients,
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      height: 1.5,
+                                      color: Colors.grey.shade700,
                                     ),
                                   ),
 
                                   const SizedBox(height: 16),
 
+                                  // Instructions Section
                                   Text(
                                     "Instructions:",
                                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -671,67 +691,25 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  Container(
-                                    width: double.infinity,
-                                    child: Text(
-                                      data['instructions'] ?? 'No Instructions',
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        height: 1.5,
-                                      ),
+                                  SelectableText(
+                                    instructions,
+                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      height: 1.5,
+                                      color: Colors.grey.shade700,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            PopupMenuButton<String>(
-                              onSelected: (value) async {
-                                if (value == 'delete') {
-                                  final shouldDelete = await showDialog<bool>(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('Delete Recipe'),
-                                      content: Text('Delete "${data['name']}"?'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () => Navigator.pop(context, false),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        ElevatedButton(
-                                          onPressed: () => Navigator.pop(context, true),
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                          child: const Text('Delete'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-
-                                  if (shouldDelete == true) {
-                                    await doc.reference.delete();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Recipe deleted'), backgroundColor: Colors.green),
-                                    );
-                                  }
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: ListTile(
-                                    leading: Icon(Icons.delete, color: Colors.red),
-                                    title: Text('Delete'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          }).toList(),
+              );
+            },
+          ),
         );
       },
     );
