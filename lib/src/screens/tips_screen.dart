@@ -54,15 +54,48 @@ class _TipsScreenState extends State<TipsScreen> {
           AppMenuButton(onNavigateToTab: widget.onNavigateToTab),
         ],
       ),
-      body: FeatureGate(
-        feature: 'tips',
-        child: const TipsScreenContent(),
-        fallback: PaywallWidget(
-          feature: 'tips',
-          customTitle: '💡 Expert Health Tips & Recipes',
-          customDescription: 'Get access to professionally curated health tips and nutritious recipes to accelerate your wellness journey.',
-          child: const TipsScreenContent(),
-        ),
+      body: Column(
+        children: [
+          // DEBUG: Show subscription status
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            color: Colors.yellow.shade100,
+            child: Column(
+              children: [
+                Text('DEBUG INFO:', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Is Premium: ${_subscriptionService.isPremium}'),
+                Text('Is Free: ${_subscriptionService.isFree}'),
+                Text('Can Access Tips: ${_subscriptionService.canAccessTips}'),
+                Text('Debug Mode: ${_subscriptionService.isDebugMode}'),
+                Text('Debug Premium Override: ${_subscriptionService.debugPremiumOverride}'),
+                Text('Current Tier: ${_subscriptionService.currentTier}'),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (_subscriptionService.isDebugMode) {
+                      await _subscriptionService.toggleDebugPremium();
+                      setState(() {}); // Refresh the UI
+                    }
+                  },
+                  child: Text('Toggle Debug Premium'),
+                ),
+              ],
+            ),
+          ),
+
+          // Main content
+          Expanded(
+            child: _subscriptionService.canAccessTips
+                ? const TipsScreenContent()
+                : PaywallWidget(
+              feature: 'tips',
+              customTitle: '💡 Expert Health Tips & Recipes',
+              customDescription: 'Get access to professionally curated health tips and nutritious recipes to accelerate your wellness journey.',
+              child: const TipsScreenContent(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -317,6 +350,10 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('tips').snapshots(),
       builder: (context, snapshot) {
+        print('🔍 Tips StreamBuilder state: ${snapshot.connectionState}');
+        print('🔍 Tips has data: ${snapshot.hasData}');
+        print('🔍 Tips docs count: ${snapshot.data?.docs.length ?? 0}');
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: Padding(
@@ -327,6 +364,7 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
         }
 
         if (snapshot.hasError) {
+          print('🔍 Tips error: ${snapshot.error}');
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -378,7 +416,7 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
             final doc = entry.value;
             final data = doc.data() as Map<String, dynamic>;
 
-            print('📋 Rendering tip $index: ${data['title']}');
+            print('📋 Tip $index data: ${data.toString()}');
 
             return Container(
               margin: const EdgeInsets.only(bottom: 16),
@@ -422,11 +460,14 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
                                       color: Colors.blue.shade800,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    data['content'] ?? 'No Content',
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      height: 1.4,
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    width: double.infinity,
+                                    child: Text(
+                                      data['content'] ?? 'No Content',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        height: 1.5,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -490,6 +531,10 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('recipes').snapshots(),
       builder: (context, snapshot) {
+        print('🔍 Recipes StreamBuilder state: ${snapshot.connectionState}');
+        print('🔍 Recipes has data: ${snapshot.hasData}');
+        print('🔍 Recipes docs count: ${snapshot.data?.docs.length ?? 0}');
+
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: Padding(
@@ -500,6 +545,7 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
         }
 
         if (snapshot.hasError) {
+          print('🔍 Recipes error: ${snapshot.error}');
           return Card(
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -551,7 +597,7 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
             final doc = entry.value;
             final data = doc.data() as Map<String, dynamic>;
 
-            print('🍳 Rendering recipe $index: ${data['name']}');
+            print('🍳 Recipe $index data: ${data.toString()}');
 
             return Container(
               margin: const EdgeInsets.only(bottom: 16),
@@ -596,6 +642,7 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
                                     ),
                                   ),
                                   const SizedBox(height: 16),
+
                                   Text(
                                     "Ingredients:",
                                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -603,12 +650,19 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
                                       color: Colors.orange.shade700,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    data['ingredients'] ?? 'No Ingredients',
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    width: double.infinity,
+                                    child: Text(
+                                      data['ingredients'] ?? 'No Ingredients',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        height: 1.5,
+                                      ),
+                                    ),
                                   ),
+
                                   const SizedBox(height: 16),
+
                                   Text(
                                     "Instructions:",
                                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -616,10 +670,15 @@ class _TipsScreenContentState extends State<TipsScreenContent> {
                                       color: Colors.orange.shade700,
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    data['instructions'] ?? 'No Instructions',
-                                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.4),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    width: double.infinity,
+                                    child: Text(
+                                      data['instructions'] ?? 'No Instructions',
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        height: 1.5,
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
