@@ -32,22 +32,16 @@ class HybridDataService extends ChangeNotifier {
   static const Duration _profileCacheLife = Duration(minutes: 10);
   static const Duration _streamRefreshInterval = Duration(minutes: 3);
 
-  // For development: Allow override to test premium features
-  // Set this to false in production
-  static const bool _debugForcePremium = false; // Change this to false for production
-
   // Track storage state changes
   static bool? _lastCloudStorageState;
 
-  // FIXED: Proper hybrid storage logic - but keep Firebase for auth users initially
+  // FIXED: Proper hybrid storage logic that respects subscription
   bool get _useCloudStorage {
     final currentUser = FirebaseAuth.instance.currentUser;
-    final hasCloudAccess = _subscriptionService.canAccessCloudSync || _debugForcePremium;
+    final hasCloudAccess = _subscriptionService.canAccessCloudSync;
 
-    // IMPORTANT: If user is signed in, always use cloud storage initially
-    // This prevents breaking existing users who have data in Firebase
-    // Later we can add migration logic when they downgrade
-    final useCloud = currentUser != null;
+    // CRITICAL FIX: Only use cloud if user is signed in AND has premium access
+    final useCloud = currentUser != null && hasCloudAccess;
 
     print('HybridDataService: User signed in: ${currentUser != null}, Has cloud access: $hasCloudAccess, Using cloud: $useCloud');
 
@@ -742,6 +736,16 @@ class HybridDataService extends ChangeNotifier {
     } catch (e) {
       print('Error performing maintenance: $e');
     }
+  }
+
+  // Public, read-only checks that bypass subscription gating
+  Future<UserProfile?> getCloudUserProfileDirect() => _firebaseService.getUserProfile();
+  Future<UserGoal?> getCloudUserGoalDirect() => _firebaseService.getUserGoal();
+
+  Future<bool> hasCloudProfileAndGoal() async {
+    final p = await _firebaseService.getUserProfile();
+    final g = await _firebaseService.getUserGoal();
+    return p != null && g != null;
   }
 
   // --- AUTH METHODS ---

@@ -257,7 +257,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Text('Cancel'),
               onPressed: () => Navigator.of(context).pop(),
             ),
-            TextButton(
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               child: const Text('Sign Out'),
               onPressed: () async {
                 Navigator.of(context).pop();
@@ -281,6 +282,7 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
+
 
   void _handleEditProfileAndGoal() {
     Navigator.of(context).push(MaterialPageRoute(

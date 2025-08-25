@@ -104,6 +104,11 @@ class _MyZenoAppState extends State<MyZenoApp> {
     // Listen to subscription changes
     widget.subscriptionService.addListener(_onSubscriptionChanged);
 
+    // CRITICAL: Listen for subscription changes and trigger data migration
+    widget.subscriptionService.addListener(() {
+      widget.hybridDataService.onSubscriptionChanged();
+    });
+
     // Perform initial maintenance
     _performInitialSetup();
   }
